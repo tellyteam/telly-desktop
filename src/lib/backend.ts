@@ -29,9 +29,12 @@ function b64url(s: string): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/** The relay address for a provider URL. `hls` asks the relay to rewrite playlists (for playback). */
-export function relayUrl(target: string, opts: { hls?: boolean } = {}): string {
-  const flags = (cleartext ? "c" : "") + (opts.hls ? "h" : "") || "-";
+/**
+ * The relay address for a provider URL. `hls` asks the relay to rewrite playlists (for playback);
+ * `probe` and `remux` are for films the Mac can't open directly (see [probeFilm]).
+ */
+export function relayUrl(target: string, opts: { hls?: boolean; probe?: boolean; remux?: boolean } = {}): string {
+  const flags = (cleartext ? "c" : "") + (opts.hls ? "h" : "") + (opts.probe ? "p" : "") + (opts.remux ? "m" : "") || "-";
   let name = "x";
   try {
     name = new URL(target).pathname.split("/").pop()?.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 60) || "x";
@@ -179,4 +182,44 @@ export async function appVersion(): Promise<string> {
 /** Saves anything still waiting, e.g. just before the window closes. */
 export function flushWrites(): void {
   for (const write of [...pendingValues.values()]) write();
+}
+
+// ---- Films the Mac can't open directly (MKV, AVI…) ----
+
+export interface FilmStream {
+  index: number;
+  codec: string;
+  language?: string | null;
+  title?: string | null;
+  layout?: string | null;
+  default: boolean;
+}
+
+export interface FilmProbe {
+  format: string;
+  durationSecs?: number | null;
+  video?: FilmStream | null;
+  audio: FilmStream[];
+  subtitles: FilmStream[];
+  /** Not MP4/MOV, so it has to be repacked to play. */
+  needsRemux: boolean;
+  /** The Mac can decode its video at all. */
+  videoPlayable: boolean;
+}
+
+/** What's inside a film, from the app's bundled FFmpeg; null in a dev browser or if it can't tell. */
+export async function probeFilm(url: string): Promise<FilmProbe | null> {
+  if (!inApp) return null;
+  try {
+    const res = await fetch(relayUrl(url, { probe: true }));
+    return res.ok ? ((await res.json()) as FilmProbe) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The film repacked into MP4 as it streams, starting [startSecs] in, with an audio track from the probe. */
+export function remuxUrl(url: string, startSecs: number, audio?: number): string {
+  const q = [`t=${Math.max(0, startSecs).toFixed(3)}`, ...(audio !== undefined ? [`a=${audio}`] : [])].join("&");
+  return `${relayUrl(url, { remux: true })}?${q}`;
 }

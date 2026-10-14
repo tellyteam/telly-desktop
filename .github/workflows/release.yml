@@ -25,6 +25,16 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
+      # The small FFmpeg telly bundles for MKV films (Apple silicon, Intel and universal), cached
+      # until the build script changes.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: ffmpeg
+        with:
+          path: src-tauri/binaries
+          key: ffmpeg-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+      - name: Build FFmpeg
+        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh
       - name: Use the tag as the version
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
       - run: npm test

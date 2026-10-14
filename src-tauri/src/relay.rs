@@ -19,6 +19,8 @@ use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use url::Url;
 
+use crate::remux;
+
 /// HLS playlists are small; anything bigger is not a playlist.
 const MAX_PLAYLIST_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -200,6 +202,10 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
     if target.url.scheme() == "http" && !target.allow_cleartext {
         return error(request, 403, "Plain HTTP is turned off for this provider");
     }
+    let flags = rest.split('/').next().unwrap_or("-");
+    if flags.contains('p') || flags.contains('m') {
+        return film(request, base, flags, &target, &path);
+    }
 
     let client = if target.allow_cleartext { &clients.lenient } else { &clients.strict };
     let range = request.headers().iter().find(|h| h.field.equiv("Range")).map(|h| h.value.as_str().to_string());
@@ -266,6 +272,42 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
     }
     let length = response.content_length().map(|l| l as usize);
     let _ = request.respond(Response::new(StatusCode(status), headers, response, length, None));
+}
+
+/// `p`: what's inside a film, as JSON. `m`: the film repacked into MP4 (`?t=` seconds to start
+/// at, `?a=` audio track). FFmpeg reads the film back through this relay.
+fn film(request: Request, base: &str, flags: &str, target: &Target, path: &str) {
+    let input = wrap(base, if target.allow_cleartext { "c" } else { "-" }, &target.url);
+    let probe = match remux::probe(target.url.as_str(), &input) {
+        Ok(p) => p,
+        Err(e) => return error(request, 502, &e),
+    };
+    if flags.contains('p') {
+        let mut json = serde_json::to_value(&probe).unwrap_or_default();
+        json["needsRemux"] = probe.needs_remux().into();
+        json["videoPlayable"] = probe.video_playable().into();
+        let body = json.to_string();
+        let mut response = Response::from_string(body);
+        for h in cors_headers().into_iter().chain(header("Content-Type", "application/json")) {
+            response.add_header(h);
+        }
+        let _ = request.respond(response);
+        return;
+    }
+    let query = path.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let param = |name: &str| query.split('&').find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='));
+    let start = param("t").and_then(|v| v.parse::<f64>().ok()).filter(|t| t.is_finite() && *t > 0.0).unwrap_or(0.0);
+    let audio = param("a").and_then(|v| v.parse::<usize>().ok());
+    match remux::start(&remux::remux_args(&probe, &input, start, audio)) {
+        Ok(output) => {
+            let mut headers = cors_headers();
+            headers.extend(header("Content-Type", "video/mp4"));
+            headers.extend(header("Cache-Control", "no-store"));
+            // No length and no byte ranges: seeking restarts the conversion at a new ?t=.
+            let _ = request.respond(Response::new(StatusCode(200), headers, output, None, None));
+        }
+        Err(e) => error(request, 502, &e),
+    }
 }
 
 #[cfg(test)]

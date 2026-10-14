@@ -41,8 +41,11 @@ plain `http://`. So telly is a [Tauri](https://tauri.app) app. The interface is 
 TypeScript in the Mac's own web view (WebKit), and a small Rust core runs a
 **local relay** on `127.0.0.1` that fetches everything from the provider on the interface's behalf.
 Playback uses the Mac's native HLS (which also decodes Dolby audio), [hls.js](https://github.com/video-dev/hls.js)
-and [mpegts.js](https://github.com/xqq/mpegts.js). For the odd stream the web engine can't decode
-(some MKV files), telly offers **Open in VLC** when VLC is installed.
+and [mpegts.js](https://github.com/xqq/mpegts.js). Films the Mac can't open directly (MKV, AVI…)
+are repacked into MP4 as they stream by a small bundled [FFmpeg](https://ffmpeg.org) (LGPL, built
+by `scripts/build-ffmpeg.sh`) and fed to the player through Media Source Extensions. Video is copied
+untouched, and so is audio unless the Mac can't play it, when it becomes AAC. **Open in VLC** remains
+for anything else, when VLC is installed.
 
 | Path | What's there |
 |---|---|
@@ -57,6 +60,7 @@ and [mpegts.js](https://github.com/xqq/mpegts.js). For the odd stream the web en
 Requires macOS, Xcode's command-line tools, Node 22+ and Rust (stable).
 
 ```bash
+scripts/build-ffmpeg.sh  # the small FFmpeg telly bundles for MKV films (once; ~2 minutes)
 npm install
 npm test                 # unit tests (TypeScript)
 (cd src-tauri && cargo test)   # unit tests (Rust)

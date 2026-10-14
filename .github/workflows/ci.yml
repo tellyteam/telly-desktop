@@ -26,5 +26,8 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      # The bundled FFmpeg is only built for releases; the Rust tests just need its slot filled.
+      - name: Placeholder FFmpeg sidecar
+        run: mkdir -p src-tauri/binaries && touch src-tauri/binaries/ffmpeg-x86_64-unknown-linux-gnu
       - run: cargo test
         working-directory: src-tauri
