@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>telly desktop mockup</title>
+<style>
+  :root {
+    --bg: #151a22; --bg-high: #1f2838; --bg-low: #12161d; --surface: #1e2531; --surface2: #273041; --line: #2f3a4c;
+    --text: #e9edf2; --muted: #98a4b4; --faint: #6c788a;
+    --accent: #4fc3f7; --accent-ink: #062330; --accent-soft: rgba(79,195,247,.16); --glow: rgba(79,195,247,.4);
+    --r-card: 10px; --r-pill: 12px; --rail: 208px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0a0d12; color: var(--text); font: 14px/1.4 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 16px 20px; }
+  .chrome { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .chrome button { background: #1c222c; color: var(--text); border: 1px solid #2a3240; border-radius: 999px; padding: 5px 13px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .chrome button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; text-align: center; max-width: 900px; }
+  kbd { font: 11px ui-monospace, Menlo, monospace; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--text); }
+
+  /* A resizable desktop window: drag the bottom-right corner to see the layout reflow. */
+  .window { width: min(1360px, 100%); height: min(820px, calc(100vh - 110px)); min-width: 760px; min-height: 520px; resize: both; overflow: hidden; position: relative;
+            border-radius: 12px; box-shadow: 0 0 0 1px #2a313d, 0 30px 80px rgba(0,0,0,.7);
+            background: radial-gradient(110% 80% at 85% -10%, var(--bg-high) 0%, var(--bg) 55%, var(--bg-low) 100%); display: flex; }
+  .lights { position: absolute; top: 14px; left: 16px; display: flex; gap: 8px; z-index: 40; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+  .os-win .lights { left: auto; right: 0; top: 0; gap: 0; } .os-win .lights i { width: 46px; height: 32px; border-radius: 0; background: transparent; position: relative; }
+  .os-win .lights i::after { content: ""; position: absolute; left: 18px; top: 15px; width: 10px; height: 1px; background: var(--muted); }
+  .os-win .lights i:hover { background: rgba(255,255,255,.08); } .os-win .lights i:last-child:hover { background: #c42b1c; }
+
+  /* Rail: always labelled on desktop (there's room), collapses to icons when the window is narrow. */
+  .rail { width: var(--rail); flex: none; padding: 46px 12px 16px; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid rgba(255,255,255,.04); background: rgba(10,13,18,.35); -webkit-app-region: drag; }
+  .wordmark { font-weight: 900; letter-spacing: -1px; font-size: 28px; color: #fff; padding: 0 12px 16px; }
+  .nav { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 12px; border-radius: 10px; color: var(--muted); cursor: pointer; white-space: nowrap; user-select: none; transition: background .12s, color .12s; -webkit-app-region: no-drag; }
+  .nav svg { width: 19px; height: 19px; flex: none; }
+  .nav:hover { background: rgba(255,255,255,.05); color: var(--text); }
+  .nav.current { background: var(--accent-soft); color: #fff; }
+  .nav .k { margin-left: auto; opacity: 0; transition: opacity .12s; } .nav:hover .k { opacity: .7; }
+  .rail .spacer { flex: 1; }
+  .rail .refresh small { display: block; font-size: 11px; color: var(--faint); margin-top: -2px; }
+  .narrow .rail { width: 64px; } .narrow .rail .wordmark { font-size: 17px; padding: 0 6px 18px; } .narrow .nav span, .narrow .nav .k { display: none; }
+
+  .main { flex: 1; min-width: 0; position: relative; }
+  .screen { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; display: none; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  .screen.on { display: block; }
+  .topbar { position: sticky; top: 0; z-index: 6; height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 32px; -webkit-app-region: drag;
+            background: linear-gradient(180deg, rgba(18,22,29,.92), rgba(18,22,29,0)); }
+  .search-box { -webkit-app-region: no-drag; margin-left: auto; width: min(340px, 40%); height: 34px; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid transparent; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--faint); cursor: text; transition: border-color .12s, background .12s; }
+  .search-box:hover { background: rgba(255,255,255,.09); } .search-box kbd { margin-left: auto; }
+
+  /* Hero */
+  .hero { position: relative; height: clamp(300px, 44vh, 420px); margin-top: -56px; }
+  .hero .art { position: absolute; right: 0; top: 0; width: 72%; height: 100%; -webkit-mask-image: linear-gradient(90deg, transparent, #000 45%), linear-gradient(0deg, transparent, #000 40%); -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent, #000 45%), linear-gradient(0deg, transparent, #000 40%); mask-composite: intersect; }
+  .hero .copy { position: absolute; left: 40px; bottom: 34px; width: min(520px, 60%); }
+  .eyebrow { color: var(--accent); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; font-weight: 600; }
+  .title-xl { font-size: clamp(30px, 3.6vw, 44px); font-weight: 700; letter-spacing: -.5px; margin: 6px 0 6px; line-height: 1.05; }
+  .meta { color: var(--muted); font-size: 13px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .meta .pill { border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; font-size: 11px; }
+  .synopsis { color: #c3cbd6; margin: 10px 0 16px; max-width: 480px; }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn { height: 38px; padding: 0 18px; border-radius: var(--r-pill); display: inline-flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; user-select: none;
+         background: rgba(255,255,255,.08); color: var(--text); border: 1px solid rgba(255,255,255,.08); transition: background .12s, transform .12s; }
+  .btn:hover { background: rgba(255,255,255,.14); } .btn:active { transform: scale(.97); }
+  .btn.primary { background: #f2f5f8; color: #111722; border-color: transparent; } .btn.primary:hover { background: #fff; }
+  .btn.on { background: var(--accent-soft); border-color: rgba(79,195,247,.4); color: #fff; }
+  .progress { height: 3px; background: rgba(255,255,255,.18); border-radius: 2px; overflow: hidden; } .progress i { display: block; height: 100%; background: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Rows: scroll with the trackpad/shift-wheel, or the arrows that appear on hover. */
+  .row { position: relative; padding: 4px 0 12px; }
+  .row h3 { margin: 0 0 2px 40px; font-size: 16px; font-weight: 600; color: #dfe5ec; display: flex; align-items: baseline; gap: 12px; }
+  .row h3 a { font-size: 12px; font-weight: 500; color: var(--accent); opacity: 0; cursor: pointer; transition: opacity .12s; } .row:hover h3 a { opacity: 1; }
+  .track { display: flex; gap: 14px; padding: 10px 40px 30px; overflow-x: auto; scroll-behavior: smooth; scrollbar-width: none; } .track::-webkit-scrollbar { display: none; }
+  .arrow { position: absolute; top: 34px; bottom: 34px; width: 40px; display: grid; place-items: center; font-size: 26px; color: #fff; cursor: pointer; opacity: 0; transition: opacity .15s; z-index: 3; }
+  .arrow.l { left: 0; background: linear-gradient(90deg, rgba(18,22,29,.95), transparent); } .arrow.r { right: 0; background: linear-gradient(-90deg, rgba(18,22,29,.95), transparent); }
+  .row:hover .arrow { opacity: .9; }
+  .card { flex: none; border-radius: var(--r-card); position: relative; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
+  .card:hover { transform: translateY(-3px) scale(1.04); box-shadow: 0 0 0 2px var(--accent), 0 12px 30px rgba(0,0,0,.5), 0 0 26px var(--glow); z-index: 2; }
+  .card .art { width: 100%; height: 100%; border-radius: var(--r-card); }
+  .card .cap { position: absolute; left: 0; right: 0; top: calc(100% + 6px); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .card:hover .cap { color: var(--text); }
+  .card .play { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; transition: opacity .15s; }
+  .card .play b { width: 42px; height: 42px; border-radius: 50%; background: rgba(242,245,248,.92); color: #111722; display: grid; place-items: center; font-size: 15px; padding-left: 3px; }
+  .card:hover .play { opacity: 1; }
+  .card .heart { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%; background: rgba(10,14,20,.7); display: grid; place-items: center; opacity: 0; transition: opacity .12s; font-size: 14px; }
+  .card:hover .heart { opacity: 1; } .card .heart.on { opacity: 1; color: var(--accent); }
+  .landscape { width: 236px; height: 133px; } .poster { width: 140px; height: 210px; }
+  .card .bar { position: absolute; left: 10px; right: 10px; bottom: 9px; }
+  .card .badge { position: absolute; top: 9px; left: 9px; font-size: 11px; padding: 1px 7px; border-radius: 5px; background: rgba(10,14,20,.72); }
+  .card .ttl { position: absolute; left: 11px; right: 11px; bottom: 12px; font-weight: 700; font-size: 14px; line-height: 1.15; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+  .chan { width: 160px; height: 92px; background: #eef2f6; display: grid; place-items: center; color: #1b2433; font-weight: 800; font-size: 19px; }
+
+  .page-head { padding: 0 40px 6px; display: flex; align-items: baseline; gap: 14px; }
+  .page-head h2 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.3px; }
+  .page-head .sub { color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 6px; padding: 8px 40px 4px; flex-wrap: wrap; }
+  .chip { height: 30px; padding: 0 14px; border-radius: var(--r-pill); display: inline-flex; align-items: center; font-size: 13px; color: var(--muted); background: rgba(255,255,255,.05); cursor: pointer; user-select: none; }
+  .chip:hover { color: var(--text); background: rgba(255,255,255,.09); } .chip.sel { color: #fff; background: var(--accent-soft); }
+
+  /* Grid ("See all" / My List / search results): fills the window width. */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 34px 16px; padding: 14px 40px 40px; }
+  .grid .card { width: auto; aspect-ratio: 2/3; height: auto; }
+  .grid.wide { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } .grid.wide .card { aspect-ratio: 16/9; }
+
+  /* Detail */
+  .detail-hero { position: relative; min-height: 380px; margin-top: -56px; }
+  .detail-hero .art { position: absolute; right: 0; top: 0; width: 70%; height: 440px; -webkit-mask-image: linear-gradient(90deg, transparent, #000 45%), linear-gradient(0deg, transparent, #000 40%); -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent, #000 45%), linear-gradient(0deg, transparent, #000 40%); mask-composite: intersect; }
+  .detail-hero .copy { position: relative; padding: 96px 40px 10px; width: min(600px, 70%); }
+  .eps { display: flex; flex-direction: column; gap: 4px; padding: 6px 40px 40px; }
+  .ep { display: grid; grid-template-columns: 34px 168px 1fr auto; gap: 16px; align-items: center; padding: 10px 12px; border-radius: 10px; cursor: pointer; transition: background .12s; }
+  .ep:hover { background: rgba(255,255,255,.05); }
+  .ep .n { color: var(--faint); font-size: 18px; text-align: center; }
+  .ep .thumb { height: 94px; border-radius: 8px; position: relative; }
+  .ep .thumb .bar { position: absolute; left: 8px; right: 8px; bottom: 7px; }
+  .ep .thumb .play { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; } .ep:hover .thumb .play { opacity: 1; }
+  .ep .thumb .play b { width: 34px; height: 34px; border-radius: 50%; background: rgba(242,245,248,.92); color: #111722; display: grid; place-items: center; font-size: 12px; padding-left: 2px; }
+  .ep h5 { margin: 0 0 3px; font-size: 14px; } .ep p { margin: 0; color: var(--muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ep .dur { color: var(--muted); font-size: 12.5px; } .ep .done { color: var(--accent); }
+
+  /* Live TV: categories | channels | preview with a live mini-player. */
+  .live { position: absolute; inset: 0; display: grid; grid-template-columns: 220px minmax(300px, 1fr) minmax(320px, 40%); }
+  .narrow .live { grid-template-columns: 180px 1fr; } .narrow .live .preview { display: none; }
+  .col { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  .cats { padding: 18px 10px 20px 22px; border-right: 1px solid rgba(255,255,255,.04); }
+  .cats h2 { margin: 0 0 12px 10px; font-size: 22px; font-weight: 600; }
+  .cat { display: flex; justify-content: space-between; padding: 6px 10px; border-radius: 8px; color: var(--muted); cursor: pointer; }
+  .cat:hover { background: rgba(255,255,255,.05); color: var(--text); } .cat.sel { color: #fff; background: var(--accent-soft); }
+  .cat span:last-child { color: var(--faint); font-size: 12px; }
+  .chlist { padding: 14px 14px 20px; }
+  .filter { position: sticky; top: 0; z-index: 2; padding-bottom: 8px; background: linear-gradient(180deg, var(--bg) 80%, transparent); }
+  .filter div { height: 34px; border-radius: 10px; background: rgba(255,255,255,.06); color: var(--faint); display: flex; align-items: center; gap: 8px; padding: 0 12px; }
+  .ch { display: grid; grid-template-columns: 34px 58px 1fr auto; align-items: center; gap: 12px; height: 50px; padding: 0 10px; border-radius: 8px; cursor: pointer; }
+  .ch:hover { background: rgba(255,255,255,.05); } .ch.sel { background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(79,195,247,.5); }
+  .ch .num { color: var(--faint); font-size: 12px; text-align: right; }
+  .ch .logo { width: 58px; height: 33px; border-radius: 6px; background: #eef2f6; color: #1b2433; display: grid; place-items: center; font-weight: 800; font-size: 10px; }
+  .ch .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ch .nm small { display: block; color: var(--faint); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+  .ch .star { color: var(--faint); opacity: 0; font-size: 15px; } .ch:hover .star { opacity: 1; } .ch .star.on { color: var(--accent); opacity: 1; }
+  .preview { padding: 18px 22px 20px 6px; display: flex; flex-direction: column; gap: 10px; }
+  .mini { aspect-ratio: 16/9; border-radius: 12px; position: relative; overflow: hidden; background: radial-gradient(90% 80% at 60% 40%, #3c5a7a 0%, #1b2b3e 50%, #070b11 100%); cursor: pointer; }
+  .mini .live-dot { position: absolute; top: 10px; left: 10px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px; background: #e5484d; color: #fff; }
+  .mini .expand { position: absolute; right: 10px; bottom: 10px; font-size: 12px; padding: 4px 10px; border-radius: 8px; background: rgba(10,14,20,.7); opacity: 0; transition: opacity .15s; } .mini:hover .expand { opacity: 1; }
+  .preview h4 { margin: 4px 0 0; font-size: 18px; }
+  .guide { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+  .slot { display: grid; grid-template-columns: 92px 1fr; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+  .slot.now { background: rgba(255,255,255,.05); } .slot time { color: var(--muted); } .slot b { font-weight: 600; } .slot p { margin: 2px 0 0; color: var(--faint); font-size: 12px; }
+
+  /* Search */
+  .search-page .big-input { margin: 4px 40px 6px; height: 54px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid rgba(79,195,247,.5); display: flex; align-items: center; gap: 12px; padding: 0 18px; font-size: 22px; }
+  .search-page .big-input .caret { width: 2px; height: 26px; background: var(--accent); margin-left: -10px; animation: blink 1s steps(1) infinite; } @keyframes blink { 50% { opacity: 0; } }
+  .search-page h3 { margin: 18px 40px 0; font-size: 14px; font-weight: 500; color: var(--muted); }
+
+  /* Settings */
+  .settings { padding: 0 40px 40px; max-width: 760px; display: flex; flex-direction: column; gap: 14px; }
+  .panel { background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.05); border-radius: 14px; padding: 16px 18px; }
+  .panel h4 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .line { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 0; } .line + .line { border-top: 1px solid rgba(255,255,255,.05); }
+  .line small { display: block; color: var(--faint); font-size: 12px; }
+  .switch { width: 38px; height: 22px; border-radius: 11px; background: var(--accent); position: relative; flex: none; cursor: pointer; } .switch::after { content: ""; position: absolute; right: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+  .switch.off { background: var(--surface2); } .switch.off::after { right: auto; left: 3px; }
+
+  /* Player: controls fade in on mouse move, out after 3s. */
+  .player { position: absolute; inset: 0; z-index: 30; background: radial-gradient(90% 80% at 60% 40%, #3c5a7a 0%, #1b2b3e 45%, #070b11 100%); display: none; cursor: none; }
+  .player.on { display: block; } .player.awake { cursor: default; }
+  .player .ui { opacity: 0; transition: opacity .25s; } .player.awake .ui { opacity: 1; }
+  .ov-top { position: absolute; left: 0; right: 0; top: 0; padding: 40px 34px 50px; display: flex; gap: 16px; align-items: flex-start; background: linear-gradient(180deg, rgba(7,10,15,.8), transparent); }
+  .back { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; font-size: 18px; } .back:hover { background: rgba(255,255,255,.2); }
+  .ov-top .t { font-size: 22px; font-weight: 600; } .ov-top .s { color: var(--muted); }
+  .ov-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 60px 34px 24px; background: linear-gradient(0deg, rgba(7,10,15,.92), transparent); }
+  .scrub { position: relative; height: 16px; display: flex; align-items: center; cursor: pointer; } .scrub .progress { flex: 1; height: 4px; transition: height .12s; } .scrub:hover .progress { height: 6px; }
+  .scrub .knob { position: absolute; left: 62%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px var(--glow); }
+  .scrub .tip { position: absolute; left: 70%; bottom: 22px; transform: translateX(-50%); font-size: 12px; padding: 3px 8px; border-radius: 6px; background: rgba(10,14,20,.9); opacity: 0; } .scrub:hover .tip { opacity: 1; }
+  .times { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin: 6px 0 12px; }
+  .ctrls { display: flex; gap: 6px; align-items: center; }
+  .ic { height: 38px; min-width: 38px; padding: 0 10px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; font-size: 13px; position: relative; }
+  .ic:hover { background: rgba(255,255,255,.12); } .ic svg { width: 20px; height: 20px; } .ic.big svg { width: 26px; height: 26px; }
+  .ic[data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 11.5px; padding: 3px 8px; border-radius: 6px; background: rgba(10,14,20,.92); color: var(--text); }
+  .ctrls .grow { flex: 1; }
+  .vol { width: 80px; } .vol .progress { height: 4px; }
+  .menu { position: absolute; right: 34px; bottom: 96px; width: 260px; border-radius: 14px; padding: 12px; background: rgba(20,26,36,.95); border: 1px solid rgba(255,255,255,.08); display: none; flex-direction: column; gap: 2px; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+  .menu.on { display: flex; } .menu h4 { margin: 4px 8px 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .opt { height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; color: #d3dae3; cursor: pointer; } .opt:hover { background: rgba(255,255,255,.08); }
+  .opt.sel::after { content: "✓"; color: var(--accent); font-weight: 900; }
+  .nextp { position: absolute; right: 34px; bottom: 120px; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; background: rgba(16,20,24,.75); border: 1px solid var(--accent); cursor: pointer; } .nextp b { display: block; } .player:has(.menu.on) .nextp { display: none; } .nextp:hover { background: rgba(16,20,24,.95); }
+  .vlc { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .toast { position: absolute; left: 50%; top: 40%; transform: translate(-50%,-50%); font-size: 22px; font-weight: 700; padding: 12px 22px; border-radius: 14px; background: rgba(10,14,20,.7); opacity: 0; transition: opacity .3s; pointer-events: none; } .toast.on { opacity: 1; transition: none; }
+  .keys-help { position: absolute; left: 34px; top: 100px; font-size: 12px; color: var(--muted); line-height: 2; }
+</style>
+</head>
+<body>
+  <div class="chrome" id="chrome"></div>
+  <div class="hint">Placeholder titles and art. Use the mouse like a normal desktop app: hover a card to play or add it to My List; drag the window's bottom-right corner to resize it. Keyboard: <kbd>⌘K</kbd> or <kbd>/</kbd> search, <kbd>Esc</kbd> back; in the player <kbd>Space</kbd> pause, <kbd>←</kbd><kbd>→</kbd> 10s, <kbd>F</kbd> full screen, <kbd>N</kbd> next episode.</div>
+
+  <div class="window" id="win">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <nav class="rail" id="rail"><div class="wordmark">telly</div></nav>
+    <main class="main" id="main">
+
+      <section class="screen" id="home">
+        <div class="topbar"><div class="search-box" data-go="search">⌕ Search films, series and channels <kbd>⌘K</kbd></div></div>
+        <div class="hero">
+          <div class="art" style="background: linear-gradient(135deg,#6a8fd6 0%,#3c4f9c 45%,#1d2546 100%)"></div>
+          <div class="copy">
+            <div class="eyebrow">Pick up where you left off</div>
+            <div class="title-xl">The Harbour</div>
+            <div class="meta"><span>Season 2 · Episode 5</span><span class="pill">15</span><span>48 min</span></div>
+            <div class="synopsis">A storm strands the ferry overnight, and Ellen finally finds out who sent the letters.</div>
+            <div style="width:300px;margin-bottom:16px"><div class="progress"><i style="width:62%"></i></div><div class="meta" style="margin-top:6px;font-size:12px">29 of 48 min</div></div>
+            <div class="btns"><div class="btn primary" data-go="player">▶ Resume</div><div class="btn" data-go="detail">More info</div></div>
+          </div>
+        </div>
+        <div id="homeRows"></div>
+      </section>
+
+      <section class="screen" id="series">
+        <div class="topbar"><div class="search-box" data-go="search">⌕ Search series <kbd>⌘K</kbd></div></div>
+        <div class="page-head"><h2>Series</h2><span class="sub">2,140 series · 31 categories</span></div>
+        <div class="tabs" id="seriesCats"></div>
+        <div id="seriesRows"></div>
+      </section>
+
+      <section class="screen" id="films">
+        <div class="topbar"><div class="search-box" data-go="search">⌕ Search films <kbd>⌘K</kbd></div></div>
+        <div class="page-head"><h2>Films</h2><span class="sub">8,312 films · 44 categories</span></div>
+        <div class="tabs" id="filmCats"></div>
+        <div id="filmRows"></div>
+      </section>
+
+      <section class="screen" id="seeall">
+        <div class="topbar"><div class="btn" data-back>‹ Films</div><div class="search-box">⌕ Filter Action <kbd>⌘F</kbd></div></div>
+        <div class="page-head"><h2>Action</h2><span class="sub">412 films · A–Z</span></div>
+        <div class="grid" id="seeallGrid"></div>
+      </section>
+
+      <section class="screen" id="detail">
+        <div class="topbar"><div class="btn" data-back style="-webkit-app-region:no-drag">‹ Back</div></div>
+        <div class="detail-hero">
+          <div class="art" style="background: linear-gradient(135deg,#6a8fd6 0%,#3c4f9c 45%,#1d2546 100%)"></div>
+          <div class="copy">
+            <div class="eyebrow">Series</div>
+            <div class="title-xl" style="font-size:clamp(34px,4vw,48px)">The Harbour</div>
+            <div class="meta"><span>2024</span><span class="pill">15</span><span>2 seasons</span><span>★ 8.1</span><span>Crime · Drama</span></div>
+            <div class="synopsis">On a remote island where everyone knows everyone, a returning detective uncovers the secrets the harbour has kept for thirty years.</div>
+            <div class="btns"><div class="btn primary" data-go="player">▶ Resume S2:E5</div><div class="btn" data-toggle="mylist">＋ My List</div></div>
+          </div>
+        </div>
+        <div class="tabs"><div class="chip">Season 1</div><div class="chip sel">Season 2</div></div>
+        <div class="eps" id="eps"></div>
+      </section>
+
+      <section class="screen" id="live">
+        <div class="live">
+          <div class="col cats" id="cats"><h2>Live TV</h2></div>
+          <div class="col chlist" id="chlist"><div class="filter"><div>⌕ Filter channels <kbd style="margin-left:auto">⌘F</kbd></div></div></div>
+          <div class="col preview" id="preview"></div>
+        </div>
+      </section>
+
+      <section class="screen" id="mylist">
+        <div class="topbar"></div>
+        <div class="page-head"><h2>My List</h2><span class="sub">Hover a title and click ♥ to add or remove it</span></div>
+        <div class="tabs"><div class="chip sel">All</div><div class="chip">Series</div><div class="chip">Films</div><div class="chip">Channels</div></div>
+        <div class="grid" id="mylistGrid"></div>
+      </section>
+
+      <section class="screen search-page" id="search">
+        <div class="topbar"></div>
+        <div class="big-input">⌕ <span id="q">harb</span><span class="caret"></span><kbd style="margin-left:auto;font-size:11px">Esc</kbd></div>
+        <h3>Series</h3><div class="track" id="rs"></div>
+        <h3 style="margin-top:0">Films</h3><div class="track" id="rf"></div>
+        <h3 style="margin-top:0">Channels</h3><div class="track" id="rc"></div>
+      </section>
+
+      <section class="screen" id="settings">
+        <div class="topbar"></div>
+        <div class="page-head" style="padding-bottom:14px"><h2>Settings</h2></div>
+        <div class="settings">
+          <div class="panel"><h4>Provider</h4>
+            <div class="line"><div>My provider<small>Xtream Codes · signed in · login kept in the macOS Keychain</small></div><div class="btns"><div class="btn">Edit</div><div class="btn">Sign out</div></div></div>
+            <div class="line"><div>Allow plain HTTP for this provider<small>Some providers have no HTTPS</small></div><div class="switch"></div></div>
+          </div>
+          <div class="panel"><h4>Playback</h4>
+            <div class="line"><div>Play the next episode automatically<small>When the credits start, with a countdown</small></div><div class="switch"></div></div>
+            <div class="line"><div>Open in VLC when a stream won't play here<small>Only offered if VLC is installed</small></div><div class="switch"></div></div>
+            <div class="line"><div>Start Live TV on the last channel</div><div class="switch off"></div></div>
+          </div>
+          <div class="panel"><h4>Updates</h4>
+            <div class="line"><div>telly 1.0.0<small>Checks GitHub once a week · last checked today</small></div><div class="btn">Check now</div></div>
+          </div>
+          <div class="panel"><h4>Data</h4>
+            <div class="line"><div>Refresh lists<small>Films, series and channels were updated 2 hours ago</small></div><div class="btn">Refresh</div></div>
+            <div class="line"><div>Clear saved data<small>Lists and artwork; your login, My List and progress are kept</small></div><div class="btn">Clear</div></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="player" id="player">
+        <div class="toast" id="toast"></div>
+        <div class="ui">
+          <div class="ov-top"><div class="back" data-back>‹</div><div><div class="t">The Harbour</div><div class="s">S2 · E5 · “Crossing”</div></div></div>
+          <div class="nextp" data-toast="Next episode"><b>▶ Next episode in 42s</b>E6 · The Lighthouse · click or <kbd>N</kbd></div>
+          <div class="menu" id="menu-aspect"><h4>Aspect ratio</h4>
+            <div class="opt sel">Original</div><div class="opt">Zoom to fill</div><div class="opt">Stretch</div><div class="opt">16:9</div><div class="opt">4:3</div><div class="opt">Custom…</div>
+            <div class="vlc">Remembered for this series</div></div>
+          <div class="menu" id="menu-tracks"><h4>Audio</h4>
+            <div class="opt sel">English · 5.1</div><div class="opt">English · Stereo</div>
+            <h4 style="margin-top:10px">Subtitles</h4><div class="opt sel">Off</div><div class="opt">English</div><div class="opt">English (SDH)</div></div>
+          <div class="menu" id="menu-speed"><h4>Speed</h4><div class="opt">0.75×</div><div class="opt sel">Normal</div><div class="opt">1.25×</div><div class="opt">1.5×</div><div class="opt">2×</div></div>
+          <div class="ov-bottom">
+            <div class="scrub"><div class="progress"><i style="width:62%"></i></div><div class="knob"></div><div class="tip">33:36</div></div>
+            <div class="times"><span>29:41</span><span>−18:19</span></div>
+            <div class="ctrls">
+              <div class="ic big" data-tip="Pause (Space)" data-toast="❚❚"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></div>
+              <div class="ic" data-tip="Back 10s (←)" data-toast="−10s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/></svg></div>
+              <div class="ic" data-tip="Forward 10s (→)" data-toast="+10s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v4h-4"/></svg></div>
+              <div class="ic" data-tip="Next episode (N)" data-toast="Next episode"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5l9 7-9 7zM16 5h3v14h-3z"/></svg></div>
+              <div class="ic" data-tip="Mute (M)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8a5 5 0 0 1 0 8" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>
+              <div class="vol"><div class="progress"><i style="width:70%"></i></div></div>
+              <div class="grow"></div>
+              <div class="ic" data-menu="speed" data-tip="Speed">1×</div>
+              <div class="ic" data-menu="tracks" data-tip="Audio & subtitles"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5h16v14H4zm2 9h5v2H6zm7 0h5v2h-5zm-7-3h12v2H6z"/></svg></div>
+              <div class="ic" data-menu="aspect" data-tip="Aspect ratio"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z"/></svg></div>
+              <div class="ic" data-tip="Picture in picture (P)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 11h-8v6h8v-6zm4 8V5c0-1.1-.9-2-2-2H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 0H3V5h18v14z"/></svg></div>
+              <div class="ic" data-tip="Full screen (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const hue = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+const art = (s, a = 135) => { const h = hue(s); return `linear-gradient(${a}deg, hsl(${h} 45% 52%) 0%, hsl(${(h + 35) % 360} 50% 32%) 55%, hsl(${(h + 60) % 360} 45% 16%) 100%)`; };
+const films = ["Copper Valley", "Night Train", "Paper Moons", "The Long Field", "Signal", "Glass Harbour", "Winter Lines", "Small Hours", "Kingfisher", "After the Rain", "North Road", "Static", "Blue Hour", "Daybreak"];
+const seriesT = ["The Harbour", "Low Tide", "Brightwater", "The Agency", "Second Chances", "Hollow Hill", "Fieldwork", "The Crossing", "Marlow", "Parallel", "Riverside", "Outpost"];
+const chans = ["News 24", "World News", "Sport One", "Sport Two", "Arena", "Drama+", "Comedy Gold", "Movies 1", "Movies 2", "Docs", "Nature", "History", "Kids", "Toons", "Music Hits", "Weather", "Business", "Food", "Travel", "Retro"];
+const shows = ["The Six O'Clock News", "Live: Evening Match", "Coast to Coast", "Bake Off", "Planet Deep", "The Quiz", "Late Film: Signal"];
+const rot = (a, i) => a.slice(i % a.length).concat(a.slice(0, i % a.length));
+
+const playIco = `<div class="play"><b>▶</b></div>`;
+const card = (cls, t, extra = "", go = "detail", ttl = true) =>
+  `<div class="card ${cls}" data-go="${go}"><div class="art" style="background:${art(t, cls === "poster" ? 160 : 135)}"></div>${ttl ? `<div class="ttl">${t}</div>` : ""}${extra}${go === "player" ? playIco : ""}<div class="heart" data-heart>♥</div><div class="cap">${t}</div></div>`;
+const chanCard = c => `<div class="card chan" data-go="player">${c}${playIco}<div class="cap">${c}</div></div>`;
+const row = (label, cards, more = true) => `<div class="row"><h3>${label}${more ? `<a data-go="seeall">See all ›</a>` : ""}</h3><div class="arrow l" data-scroll="-1">‹</div><div class="track">${cards}</div><div class="arrow r" data-scroll="1">›</div></div>`;
+const bar = p => `<div class="bar"><div class="progress"><i style="width:${p}%"></i></div></div>`;
+
+$("#homeRows").innerHTML =
+  row("Continue watching", [["The Harbour", 62, "S2:E5"], ["Night Train", 30, "Film"], ["Low Tide", 85, "S1:E3"], ["Brightwater", 12, "S3:E1"], ["Signal", 44, "Film"], ["Marlow", 70, "S1:E8"]]
+    .map(([t, p, b]) => card("landscape", t, `<div class="badge">${b}</div>${bar(p)}`, "player")).join(""), false) +
+  row("My List", seriesT.slice(2, 11).map(t => card("poster", t)).join("")) +
+  row("Favourite channels", chans.slice(0, 10).map(chanCard).join("")) +
+  row("Recently added films", films.map(t => card("poster", t, "", "player")).join("")) +
+  row("Recently added series", rot(seriesT, 4).map(t => card("poster", t)).join(""));
+
+const catChips = (id, cats) => $(id).innerHTML = cats.map((c, i) => `<div class="chip ${i ? "" : "sel"}">${c}</div>`).join("");
+catChips("#filmCats", ["All", "New this month", "Action", "Comedy", "Drama", "Documentaries", "Family", "Horror", "Sci-fi", "4K"]);
+catChips("#seriesCats", ["All", "Drama", "Crime", "Comedy", "Reality", "Documentaries", "Kids", "Anime"]);
+$("#filmRows").innerHTML = ["New this month", "Action", "Comedy", "Documentaries", "Family"].map((c, i) => row(c, rot(films, i * 3).map(t => card("poster", t, "", "player")).join(""))).join("");
+$("#seriesRows").innerHTML = ["Continue watching", "Drama", "Crime", "Comedy", "Reality"].map((c, i) => row(c, rot(seriesT, i * 2).map(t => card("poster", t, i === 0 ? bar(25 + (hue(t) % 60)) : "")).join(""), i > 0)).join("");
+$("#seeallGrid").innerHTML = [...films, ...rot(films, 5), ...rot(films, 9)].map(t => card("poster", t, "", "player")).join("");
+$("#mylistGrid").innerHTML = [...seriesT.slice(2, 9), ...films.slice(3, 9)].map((t, i) => card("poster", t, "", i < 7 ? "detail" : "player").replace('data-heart', 'data-heart class="heart on"').replace('class="heart" data-heart class="heart on"', 'class="heart on" data-heart')).join("");
+
+const epNames = ["Arrival", "The Letters", "Tidewater", "Fog", "Crossing", "The Lighthouse", "Undertow", "Home"];
+$("#eps").innerHTML = epNames.map((t, i) => `<div class="ep" data-go="player"><div class="n">${i + 1}</div>
+  <div class="thumb" style="background:${art(t)}">${i === 4 ? bar(62) : ""}<div class="play"><b>▶</b></div></div>
+  <div><h5>${t}</h5><p>${["Ellen returns to the island after twelve years away.", "An anonymous letter turns up at the harbour master's office.", "The tide reveals something the village would rather forget.", "Fog cuts the island off, and tempers fray at the inquest."][i % 4]}</p></div>
+  <div class="dur">${i < 4 ? `<span class="done">✓ Watched</span>` : i === 4 ? "19 min left" : "48 min"}</div></div>`).join("");
+
+// Live TV
+const liveCats = [["★ Favourites", 6], ["All channels", 1240], ["UK · Entertainment", 66], ["UK · News", 18], ["UK · Sport", 47], ["UK · Movies", 42], ["UK · Kids", 23], ["UK · Documentaries", 26], ["Ireland", 29], ["Music", 10], ["USA · Entertainment", 120], ["USA · Sport", 88]];
+$("#cats").innerHTML += liveCats.map(([c, n], i) => `<div class="cat ${i === 2 ? "sel" : ""}"><span>${c}</span><span>${n}</span></div>`).join("");
+$("#chlist").innerHTML += chans.map((c, i) => `<div class="ch ${i ? "" : "sel"}" data-ch="${c}" data-n="${101 + i}">
+  <span class="num">${101 + i}</span><span class="logo">${c.split(" ")[0].toUpperCase().slice(0, 6)}</span>
+  <span class="nm">${c}<small>${shows[hue(c) % shows.length]}</small></span><span class="star ${i % 5 === 0 ? "on" : ""}" data-heart>★</span></div>`).join("");
+function preview(c, n) {
+  const h = hue(c), slots = [0, 1, 2, 3, 4].map(k => shows[(h + k) % shows.length]);
+  $("#preview").innerHTML = `<div class="mini" data-go="player"><span class="live-dot">LIVE</span><span class="expand">⤢ Full screen · double-click</span></div>
+    <h4>${n} · ${c}</h4>
+    <div class="guide">${slots.map((s, k) => `<div class="slot ${k ? "" : "now"}"><time>${["20:00", "21:00", "21:30", "22:00", "23:15"][k]}</time><div><b>${s}</b>${k ? "" : `<div class="progress" style="margin:6px 0 2px"><i style="width:40%"></i></div><p>Started 25 min ago · 35 min left</p>`}</div></div>`).join("")}</div>`;
+}
+preview(chans[0], 101);
+
+// Search
+$("#rs").innerHTML = ["The Harbour", "Harbour Lights", "Harbourmaster"].map(t => card("poster", t)).join("");
+$("#rf").innerHTML = ["Glass Harbour", "Safe Harbour", "Harbinger"].map(t => card("poster", t, "", "player")).join("");
+$("#rc").innerHTML = ["Harbour TV", "Harbour Radio"].map(chanCard).join("");
+
+// Rail
+const icons = {
+  home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  search: '<circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2"/>',
+  live: '<path d="M3 7h18v12H3zM8 3l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2"/>',
+  series: '<path d="M3 6h18v11H3zM8 21h8" fill="none" stroke="currentColor" stroke-width="2"/>',
+  films: '<path d="M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4" fill="none" stroke="currentColor" stroke-width="1.8"/>',
+  mylist: '<path d="M12 4v16M4 12h16" stroke="currentColor" stroke-width="2.2"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2"/>',
+  settings: '<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2"/>',
+};
+const nav = [["home", "Home", "⌘1"], ["search", "Search", "⌘K"], ["live", "Live TV", "⌘2"], ["series", "Series", "⌘3"], ["films", "Films", "⌘4"], ["mylist", "My List", "⌘5"]];
+const navItem = ([id, label, k], extra = "") => `<div class="nav ${id === "refresh" ? "refresh" : ""}" data-go="${id === "refresh" ? "" : id}" data-nav="${id}"><svg viewBox="0 0 24 24" fill="currentColor">${icons[id]}</svg><span>${label}${extra}</span>${k ? `<kbd class="k">${k}</kbd>` : ""}</div>`;
+$("#rail").innerHTML += nav.map(n => navItem(n)).join("") + `<div class="spacer"></div>` +
+  navItem(["refresh", "Refresh", ""], "<small>Updated 2 hours ago</small>") + navItem(["settings", "Settings", "⌘,"]);
+
+// Screens
+const screens = ["home", "live", "series", "films", "seeall", "detail", "mylist", "search", "settings"];
+$("#chrome").innerHTML = [["home", "Home"], ["live", "Live TV"], ["series", "Series"], ["detail", "Series detail"], ["films", "Films"], ["seeall", "See all (grid)"], ["mylist", "My List"], ["search", "Search"], ["settings", "Settings"], ["player", "Player"], ["win", "Windows look"]]
+  .map(([id, l]) => `<button data-s="${id}">${l}</button>`).join("");
+let back = [], current = "home";
+function show(id, isBack) {
+  if (!isBack && id !== current) back.push(current);
+  current = id;
+  const playing = id === "player";
+  $("#player").classList.toggle("on", playing);
+  if (playing) wake();
+  if (!playing) screens.forEach(s => $("#" + s).classList.toggle("on", s === id));
+  $$(".menu").forEach(m => m.classList.remove("on"));
+  $$(".chrome button").forEach(b => b.dataset.s !== "win" && b.classList.toggle("on", b.dataset.s === id));
+  const navId = { detail: "series", seeall: "films" }[id] || id;
+  $$(".nav").forEach(i => i.classList.toggle("current", i.dataset.nav === navId));
+  if (!playing) $("#" + id).scrollTop = 0;
+}
+$("#chrome").addEventListener("click", e => {
+  const s = e.target.dataset.s; if (!s) return;
+  if (s === "win") { $("#win").classList.toggle("os-win"); e.target.classList.toggle("on"); return; }
+  show(s);
+});
+const goBack = () => back.length && show(back.pop(), true);
+
+let toastT;
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("on"), 600); }
+
+document.addEventListener("click", e => {
+  const t = e.target;
+  const heart = t.closest("[data-heart]"); if (heart) { heart.classList.toggle("on"); e.stopPropagation(); return; }
+  const scroll = t.closest("[data-scroll]"); if (scroll) { const tr = scroll.parentElement.querySelector(".track"); tr.scrollLeft += scroll.dataset.scroll * tr.clientWidth * .8; return; }
+  if (t.closest("[data-back]")) return goBack();
+  const menuBtn = t.closest("[data-menu]"); if (menuBtn) { const m = $("#menu-" + menuBtn.dataset.menu), was = m.classList.contains("on"); $$(".menu").forEach(x => x.classList.remove("on")); m.classList.toggle("on", !was); return; }
+  const opt = t.closest(".opt"); if (opt) { let s = opt; while ((s = s.previousElementSibling) && s.classList.contains("opt")) s.classList.remove("sel"); s = opt; while ((s = s.nextElementSibling) && s.classList.contains("opt")) s.classList.remove("sel"); opt.classList.add("sel"); return; }
+  const tst = t.closest("[data-toast]"); if (tst) return toast(tst.dataset.toast);
+  const chip = t.closest(".chip, .cat"); if (chip) { [...chip.parentElement.children].forEach(c => c.classList.toggle("sel", c === chip)); return; }
+  const ch = t.closest(".ch"); if (ch) { $$(".ch").forEach(c => c.classList.toggle("sel", c === ch)); preview(ch.dataset.ch, ch.dataset.n); return; }
+  const sw = t.closest(".switch"); if (sw) return sw.classList.toggle("off");
+  const tg = t.closest("[data-toggle]"); if (tg) { tg.classList.toggle("on"); tg.textContent = tg.classList.contains("on") ? "✓ In My List" : "＋ My List"; return; }
+  if (t.closest(".refresh")) { const s = t.closest(".refresh").querySelector("small"); s.textContent = "Refreshing…"; setTimeout(() => s.textContent = "Updated just now", 1200); return; }
+  const go = t.closest("[data-go]"); if (go && go.dataset.go) show(go.dataset.go);
+});
+document.addEventListener("dblclick", e => { if (e.target.closest(".ch")) show("player"); });
+
+// Player: controls appear on mouse move and hide after 3s of stillness.
+let idle;
+function wake() { $("#player").classList.add("awake"); clearTimeout(idle); idle = setTimeout(() => { if (!$(".menu.on")) $("#player").classList.remove("awake"); }, 3000); }
+$("#player").addEventListener("mousemove", wake);
+
+document.addEventListener("keydown", e => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key === "k" || (!mod && e.key === "/" && current !== "player")) { e.preventDefault(); return show("search"); }
+  if (mod && "12345".includes(e.key)) { e.preventDefault(); return show(["home", "live", "series", "films", "mylist"][+e.key - 1]); }
+  if (mod && e.key === ",") { e.preventDefault(); return show("settings"); }
+  if (e.key === "Escape") { if ($(".menu.on")) return $$(".menu").forEach(m => m.classList.remove("on")); return goBack(); }
+  if (current === "player") {
+    wake();
+    const m = { " ": "❚❚", ArrowLeft: "−10s", ArrowRight: "+10s", ArrowUp: "Volume 80%", ArrowDown: "Volume 60%", f: "Full screen", n: "Next episode", m: "Muted", p: "Picture in picture" }[e.key];
+    if (m) { e.preventDefault(); toast(m); }
+  }
+});
+
+$("#win").append($("#player")); // the player covers the whole window, rail included
+
+// Narrow windows: icon-only rail, two-column Live TV.
+new ResizeObserver(([e]) => $("#win").classList.toggle("narrow", e.contentRect.width < 1000)).observe($("#win"));
+show("home");
+</script>
+</body>
+</html>
