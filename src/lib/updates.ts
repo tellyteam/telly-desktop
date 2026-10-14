@@ -17,8 +17,25 @@ export function parseRelease(root: unknown): Release | undefined {
   const version = typeof o.tag_name === "string" ? o.tag_name.replace(/^v/, "").trim() : "";
   if (!version) return undefined;
   const page = typeof o.html_url === "string" && o.html_url.startsWith("https://github.com/") ? o.html_url : RELEASES_PAGE;
-  const notes = typeof o.body === "string" ? o.body.trim() || undefined : undefined;
+  const notes = typeof o.body === "string" ? cleanNotes(o.body) : undefined;
   return { version, page, notes };
+}
+
+/**
+ * Release notes as shown in the app: never anyone's account name. Drops GitHub's generated
+ * credits ("by @someone in …", "New Contributors", "Full Changelog") and any other @mention.
+ */
+export function cleanNotes(body: string): string | undefined {
+  let skipping = false;
+  const lines: string[] = [];
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (/^## New Contributors/i.test(line)) { skipping = true; continue; }
+    if (line.startsWith("#")) { skipping = false; continue; }
+    if (skipping || line.startsWith("**Full Changelog**") || line.includes("made their first contribution")) continue;
+    lines.push(line.replace(/\s+by @[\w-]+(\s+in\s+\S+)?/g, "").replace(/@[\w-]+/g, "").replace(/ {2,}/g, " ").trimEnd());
+  }
+  return lines.join("\n").trim().replace(/\n{3,}/g, "\n\n") || undefined;
 }
 
 /** True when [candidate] (e.g. "1.2.0") is a higher version than [current] ("1.1.9"). */

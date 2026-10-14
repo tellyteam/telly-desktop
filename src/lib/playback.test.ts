@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as P from "./playback";
-import { isNewer, parseRelease } from "./updates";
+import { cleanNotes, isNewer, parseRelease } from "./updates";
 
 describe("progress", () => {
   it("key drops credentials from xtream urls", () => {
@@ -80,5 +80,13 @@ describe("updates", () => {
     expect(isNewer("v2.0", "1.99.99")).toBe(true);
     expect(isNewer("1.0.0", "1.0.0")).toBe(false);
     expect(isNewer("1.0.0-beta", "1.0.1")).toBe(false);
+  });
+});
+
+describe("release notes", () => {
+  it("never show account names", () => {
+    const generated = "## What's Changed\n* MKV films play by @someone in https://github.com/x/pull/4\n\n## New Contributors\n* @someone made their first contribution in https://github.com/x/pull/1\n\n**Full Changelog**: https://github.com/x/compare/a...b";
+    expect(cleanNotes(generated)).toBe("* MKV films play");
+    expect(cleanNotes("**Full Changelog**: https://x")).toBeUndefined();
   });
 });
