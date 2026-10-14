@@ -230,8 +230,9 @@ function attachRemux(
 }
 
 function attachHls(HlsJs: typeof Hls, video: HTMLVideoElement, src: string, opts: AttachOptions, fail: (m: string) => void): Attached {
-  // subtitleDisplay: false — a stream's "default" subtitle track doesn't switch subtitles on.
-  const hls = new HlsJs({ enableWorker: true, backBufferLength: 60, maxBufferLength: 30, capLevelToPlayerSize: false, subtitleDisplay: false });
+  const hls = new HlsJs({ enableWorker: true, backBufferLength: 60, maxBufferLength: 30, capLevelToPlayerSize: false });
+  // A stream's "default" subtitle track doesn't switch subtitles on; the player menu does.
+  hls.subtitleDisplay = false;
   let mediaRecoveries = 0;
   hls.on(HlsJs.Events.ERROR, (_e, data) => {
     if (!data.fatal) return;
