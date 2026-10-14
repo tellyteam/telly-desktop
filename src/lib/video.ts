@@ -104,8 +104,14 @@ export async function attach(video: HTMLVideoElement, url: string, opts: AttachO
       : "The stream stopped or couldn't be loaded.");
   };
   video.addEventListener("error", onError);
+  // Subtitles start off even when the stream flags a track "default"; the player menu turns them on.
+  const startOff = (e: TrackEvent) => {
+    const t = e.track as TextTrack | null;
+    if (t && (t.kind === "subtitles" || t.kind === "captions") && t.mode === "showing") t.mode = "disabled";
+  };
   const tracksChanged = () => opts.onTracks?.();
   video.addEventListener("loadedmetadata", tracksChanged);
+  video.textTracks.addEventListener?.("addtrack", startOff as EventListener);
   video.textTracks.addEventListener?.("addtrack", tracksChanged);
   video.src = src;
   return {
@@ -114,6 +120,7 @@ export async function attach(video: HTMLVideoElement, url: string, opts: AttachO
       video.removeEventListener("error", onError);
       video.removeEventListener("loadedmetadata", tracksChanged);
       video.textTracks.removeEventListener?.("addtrack", tracksChanged);
+      video.textTracks.removeEventListener?.("addtrack", startOff as EventListener);
       video.removeAttribute("src");
       video.load();
     },
@@ -223,7 +230,8 @@ function attachRemux(
 }
 
 function attachHls(HlsJs: typeof Hls, video: HTMLVideoElement, src: string, opts: AttachOptions, fail: (m: string) => void): Attached {
-  const hls = new HlsJs({ enableWorker: true, backBufferLength: 60, maxBufferLength: 30, capLevelToPlayerSize: false });
+  // subtitleDisplay: false — a stream's "default" subtitle track doesn't switch subtitles on.
+  const hls = new HlsJs({ enableWorker: true, backBufferLength: 60, maxBufferLength: 30, capLevelToPlayerSize: false, subtitleDisplay: false });
   let mediaRecoveries = 0;
   hls.on(HlsJs.Events.ERROR, (_e, data) => {
     if (!data.fatal) return;
