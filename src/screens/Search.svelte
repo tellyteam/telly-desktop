@@ -2,7 +2,6 @@
   import Card from "../components/Card.svelte";
   import Row from "../components/Row.svelte";
   import { playChannel } from "../lib/actions";
-  import { isMac } from "../lib/backend";
   import { app } from "../lib/state.svelte";
 
   let query = $state("");
@@ -25,7 +24,7 @@
   <label class="big-input">⌕ <input bind:this={input} bind:value={query} placeholder="Search films, series and channels" spellcheck="false" autocomplete="off" />
     <kbd>Esc</kbd></label>
   {#if !debounced.trim()}
-    <div class="empty">Type to search every film, series and channel. Tip: press <kbd>{isMac ? "⌘K" : "Ctrl K"}</kbd> or <kbd>/</kbd> from anywhere.</div>
+    <div class="empty">Type to search every film, series and channel. Tip: press <kbd>⌘K</kbd> or <kbd>/</kbd> from anywhere.</div>
   {:else if none}
     <div class="empty"><b>No matches for “{debounced.trim()}”</b>Try fewer letters, or check the spelling.</div>
   {/if}

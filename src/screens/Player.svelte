@@ -459,8 +459,7 @@
   video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform-origin: center; transition: transform .2s; }
   .ui { opacity: 0; transition: opacity .25s; pointer-events: none; }
   .awake .ui { opacity: 1; pointer-events: auto; }
-  .ov-top { position: absolute; left: 0; right: 0; top: 0; padding: 40px 34px 60px; display: flex; gap: 16px; align-items: flex-start; background: linear-gradient(180deg, rgba(7,10,15,.8), transparent); }
-  :global(.mac) .ov-top { padding-left: 90px; padding-top: 18px; }
+  .ov-top { position: absolute; left: 0; right: 0; top: 0; padding: 18px 34px 60px 90px; display: flex; gap: 16px; align-items: flex-start; background: linear-gradient(180deg, rgba(7,10,15,.8), transparent); }
   .back { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; font-size: 20px; border: 0; color: #fff; flex: none; -webkit-app-region: no-drag; }
   .back:hover { background: rgba(255,255,255,.2); }
   .t { font-size: 22px; font-weight: 600; } .s { color: var(--muted); }

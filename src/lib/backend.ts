@@ -7,8 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
  */
 
 export const inApp = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-export const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || navigator.userAgent);
-/** Safari's engine (the app's web view on a Mac), as opposed to Chromium (Windows, or a dev browser). */
+/** Safari's engine (the app's web view), as opposed to Chromium (a browser running `npm run dev`). */
 export const isWebKit = typeof navigator !== "undefined" && /AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|Edg\//.test(navigator.userAgent);
 
 let relayBase = "";
@@ -83,7 +82,7 @@ export async function getJson(url: string, signal?: AbortSignal): Promise<unknow
   }
 }
 
-// ---- Private storage: the login in the Keychain / Credential Manager, the rest encrypted on disk ----
+// ---- Private storage: the login in the Keychain, the rest encrypted on disk ----
 
 export async function secretGet(name: string): Promise<string | null> {
   if (inApp) return (await invoke<string | null>("secret_get", { name })) ?? null;

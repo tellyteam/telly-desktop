@@ -43,17 +43,10 @@ fn store_delete(s: State<Secure>, name: String) -> Result<(), String> {
 
 /// Where VLC is installed, if it is.
 fn vlc_path() -> Option<std::path::PathBuf> {
-    let candidates: Vec<std::path::PathBuf> = if cfg!(target_os = "macos") {
-        vec!["/Applications/VLC.app/Contents/MacOS/VLC".into()]
-    } else if cfg!(target_os = "windows") {
-        ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
-            .iter()
-            .filter_map(|v| std::env::var_os(v))
-            .map(|p| std::path::PathBuf::from(p).join("VideoLAN").join("VLC").join("vlc.exe"))
-            .collect()
-    } else {
-        vec!["/usr/bin/vlc".into(), "/snap/bin/vlc".into()]
-    };
+    let mut candidates = vec![std::path::PathBuf::from("/Applications/VLC.app/Contents/MacOS/VLC")];
+    if let Some(home) = std::env::var_os("HOME") {
+        candidates.push(std::path::PathBuf::from(home).join("Applications/VLC.app/Contents/MacOS/VLC"));
+    }
     candidates.into_iter().find(|p| p.exists())
 }
 

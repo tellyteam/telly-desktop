@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { isMac } from "../lib/backend";
   import { ago, app, type Route } from "../lib/state.svelte";
 
-  const mod = isMac ? "⌘" : "Ctrl ";
+  const mod = "⌘";
   const icons: Record<string, string> = {
     home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
     search: '<circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2"/>',

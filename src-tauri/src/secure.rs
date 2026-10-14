@@ -1,7 +1,7 @@
-//! Private storage. The provider login is kept in the system's credential store (macOS Keychain,
-//! Windows Credential Manager). Everything else telly remembers (history, progress, My List,
-//! settings) is a small JSON file, encrypted with AES-256-GCM under a key that also lives in the
-//! credential store. Xtream stream URLs embed the login, so none of it is written in the clear.
+//! Private storage. The provider login is kept in the macOS Keychain. Everything else telly
+//! remembers (history, progress, My List, settings) is a small JSON file, encrypted with
+//! AES-256-GCM under a key that also lives in the Keychain. Xtream stream URLs embed the login,
+//! so none of it is written in the clear.
 
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce};

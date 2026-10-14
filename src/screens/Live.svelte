@@ -2,7 +2,6 @@
   import { onDestroy, tick } from "svelte";
   import Art from "../components/Art.svelte";
   import { playChannel } from "../lib/actions";
-  import { isMac } from "../lib/backend";
   import * as G from "../lib/guide";
   import type { Channel } from "../lib/model";
   import * as repo from "../lib/repo";
@@ -114,7 +113,7 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (app.player) return;
-    const mod = isMac ? e.metaKey : e.ctrlKey;
+    const mod = e.metaKey;
     if (mod && e.key.toLowerCase() === "f") {
       e.preventDefault();
       filterInput.focus();
@@ -158,7 +157,7 @@
 
   <div class="col chlist" bind:this={list}>
     <div class="filter"><label class="search-box"><span>⌕</span><input bind:this={filterInput} bind:value={filter} placeholder="Filter {category === ALL ? 'all channels' : category}" spellcheck="false" />
-      <kbd>{isMac ? "⌘F" : "Ctrl F"}</kbd></label></div>
+      <kbd>⌘F</kbd></label></div>
     {#each channels.slice(0, shown) as c, i (c.id)}
       {@const fav = app.isFavourite("live", c.id)}
       <div class="ch" class:sel={selected?.id === c.id} role="button" tabindex="0" use:visible={c}

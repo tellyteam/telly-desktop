@@ -1,6 +1,6 @@
 <script lang="ts">
   import TopBar from "../components/TopBar.svelte";
-  import { inApp, isMac, openExternal, vlcAvailable } from "../lib/backend";
+  import { inApp, openExternal, vlcAvailable } from "../lib/backend";
   import { ago, app } from "../lib/state.svelte";
   import { RELEASES_PAGE } from "../lib/updates";
 
@@ -18,7 +18,7 @@
   <div class="page-head" style="padding-bottom:14px"><h2>Settings</h2></div>
   <div class="settings">
     <div class="panel"><h4>Provider</h4>
-      <div class="line"><div>{p.name}<small>{p.kind === "xtream" ? "Xtream Codes" : "M3U playlist"} · login kept in {isMac ? "the macOS Keychain" : inApp ? "Windows Credential Manager" : "this browser (development)"}</small></div>
+      <div class="line"><div>{p.name}<small>{p.kind === "xtream" ? "Xtream Codes" : "M3U playlist"} · login kept in {inApp ? "the macOS Keychain" : "this browser (development)"}</small></div>
         <div class="btns"><button class="btn small" onclick={() => app.go({ name: "setup", editing: true })}>Edit</button>
           {#if confirmSignOut}<button class="btn small" onclick={() => app.signOut()}>Sign out and forget it</button><button class="btn small" onclick={() => (confirmSignOut = false)}>Cancel</button>
           {:else}<button class="btn small" onclick={() => (confirmSignOut = true)}>Sign out</button>{/if}</div></div>

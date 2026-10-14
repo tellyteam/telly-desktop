@@ -7,7 +7,7 @@ import { engineFor } from "./playback";
  * Attaches a stream to a <video> element through the relay, with the right engine:
  * - HLS: natively on a Mac (Safari's engine also decodes Dolby audio), hls.js elsewhere.
  * - MPEG-TS (most live channels): mpegts.js.
- * - Files (mp4, mkv…): the video element itself. MKV plays on Windows; on a Mac some won't,
+ * - Files (mp4, mkv…): the video element itself. MKV doesn't play in Safari's engine,
  *   and the player offers VLC instead.
  */
 

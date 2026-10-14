@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Rail from "./components/Rail.svelte";
-  import { flushWrites, isMac } from "./lib/backend";
+  import { flushWrites } from "./lib/backend";
   import { app } from "./lib/state.svelte";
   import Catalog from "./screens/Catalog.svelte";
   import FilmDetail from "./screens/FilmDetail.svelte";
@@ -27,7 +27,7 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (app.player || !app.provider) return; // the player and setup handle their own keys
-    const mod = isMac ? e.metaKey : e.ctrlKey;
+    const mod = e.metaKey;
     if ((mod && e.key.toLowerCase() === "k") || (e.key === "/" && !typing(e.target))) {
       e.preventDefault();
       app.go({ name: "search" });
@@ -49,7 +49,7 @@
 
 <svelte:window bind:innerWidth={width} {onkeydown} />
 
-<div class="window" class:mac={isMac} class:narrow={width < 1000}>
+<div class="window" class:narrow={width < 1000}>
   {#if !app.ready}
     <div class="center drag" data-tauri-drag-region><div class="spinner"></div></div>
   {:else if app.route.name === "setup" || !app.provider}

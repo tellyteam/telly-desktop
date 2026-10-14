@@ -79,7 +79,7 @@
       <button class="btn primary" type="submit" disabled={!ready || busy}>{busy ? "Connecting…" : editing ? "Save" : "Connect"}</button>
       {#if editing}<button class="btn" type="button" onclick={() => app.goBack() || app.go({ name: "home" })}>Cancel</button>{/if}
     </div>
-    <p class="hint">Your login stays on this computer, in {navigator.platform.includes("Mac") ? "the macOS Keychain" : "Windows Credential Manager"}. telly only talks to your provider, and to GitHub once a week to check for updates.</p>
+    <p class="hint">Your login stays on this computer, in the macOS Keychain. telly only talks to your provider, and to GitHub once a week to check for updates.</p>
   </form>
 </div>
 
