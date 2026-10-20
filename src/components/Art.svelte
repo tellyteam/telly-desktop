@@ -2,7 +2,11 @@
   import { img } from "../lib/backend";
 
   /** Provider artwork through the relay, with a calm generated gradient when there's none. */
-  let { src, title, fit = "cover", onfail }: { src?: string; title: string; fit?: "cover" | "contain"; onfail?: () => void } = $props();
+  let { src, title, fit = "cover", onfail, onsize }: {
+    src?: string; title: string; fit?: "cover" | "contain"; onfail?: () => void;
+    /** The image's natural width ÷ height, once it has loaded. */
+    onsize?: (ratio: number) => void;
+  } = $props();
   let failed = $state(false);
   const url = $derived(img(src));
   $effect(() => {
@@ -18,7 +22,8 @@
 </script>
 
 {#if url && !failed}
-  <img src={url} alt="" loading="lazy" decoding="async" draggable="false" style:object-fit={fit} onerror={() => { failed = true; onfail?.(); }} />
+  <img src={url} alt="" loading="lazy" decoding="async" draggable="false" style:object-fit={fit} onerror={() => { failed = true; onfail?.(); }}
+    onload={(e) => { const i = e.currentTarget as HTMLImageElement; if (i.naturalHeight) onsize?.(i.naturalWidth / i.naturalHeight); }} />
 {:else if fit === "contain"}
   <span>{title.slice(0, 14)}</span>
 {:else}

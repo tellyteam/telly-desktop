@@ -239,3 +239,5 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 .center { position: absolute; inset: 0; display: grid; place-items: center; }
 .sync-code { white-space: nowrap; font: 600 17px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .08em; padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,.06); user-select: text; -webkit-user-select: text; }
 .sync-link { justify-content: flex-start; gap: 20px; }
+.heart.remove { font-size: 12px; }
+.chan.picture .art { padding: 0; background: #000; }

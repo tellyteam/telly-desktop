@@ -67,7 +67,8 @@
         {@const item = h.items[P.continueIndex(h, app.progressOf)]}
         {@const p = app.progressOf(item.url)}
         <Card variant="landscape" title={h.live ? item.name : P.isFilm(h) ? item.name : h.heading} image={h.art ?? item.logo}
-          badge={badge(h)} progress={!h.live && p ? P.fraction(p) : undefined} playable onclick={() => app.resume(h)} />
+          badge={badge(h)} progress={!h.live && p ? P.fraction(p) : undefined} playable onclick={() => app.resume(h)}
+          onremove={() => app.removeFromHistory(h)} />
       {/each}
     </Row>
   {/if}
