@@ -62,7 +62,7 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 .search-box:focus-within { border-color: rgba(79,195,247,.5); background: rgba(255,255,255,.08); }
 
 /* Hero */
-.hero { position: relative; min-height: clamp(300px, 46vh, 440px); margin-top: -56px; display: flex; align-items: flex-end; }
+.hero { position: relative; min-height: clamp(300px, 46vh, 440px); margin-top: -64px; display: flex; align-items: flex-end; }
 .hero .art, .detail-hero .art { position: absolute; right: 0; top: 0; width: 72%; height: 100%; object-fit: cover;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 45%), linear-gradient(0deg, transparent, #000 40%); -webkit-mask-composite: source-in;
   mask-image: linear-gradient(90deg, transparent, #000 45%), linear-gradient(0deg, transparent, #000 40%); mask-composite: intersect; }
@@ -146,7 +146,7 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 .empty b { color: var(--text); display: block; font-size: 16px; margin-bottom: 4px; }
 
 /* Detail */
-.detail-hero { position: relative; min-height: 380px; margin-top: -56px; }
+.detail-hero { position: relative; min-height: 380px; margin-top: -64px; }
 .detail-hero .art { height: 440px; }
 .detail-hero .copy { position: relative; padding: 96px var(--pad) 14px; width: min(620px, 70%); }
 .cast { color: var(--faint); font-size: 12.5px; margin: -6px 0 16px; max-width: 520px; }
@@ -241,3 +241,14 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 .sync-link { justify-content: flex-start; gap: 20px; }
 .heart.remove { font-size: 12px; }
 .chan.picture .art { padding: 0; background: #000; }
+
+/* The top-bar search: centred, larger and nearly solid, so it's easy to find over artwork. */
+.topbar .search-box { margin: 0 auto; width: min(520px, 56%); height: 42px; border-radius: 12px; font-size: 14.5px; gap: 10px; padding: 0 14px;
+  background: rgba(32,38,49,.94); border: 1px solid rgba(255,255,255,.14); color: var(--muted);
+  box-shadow: 0 6px 20px rgba(0,0,0,.35); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.topbar .search-box:hover { background: rgba(40,47,60,.97); border-color: rgba(255,255,255,.22); }
+.topbar .search-box:focus-visible { border-color: rgba(79,195,247,.7); outline: none; }
+.topbar .search-box .icon { font-size: 17px; color: var(--text); }
+.topbar { height: 64px; }
+.topbar .search-box { white-space: nowrap; overflow: hidden; min-width: 0; }
+.topbar .search-box .label { overflow: hidden; text-overflow: ellipsis; }

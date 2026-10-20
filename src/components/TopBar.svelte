@@ -8,6 +8,6 @@
 <div class="topbar drag" data-tauri-drag-region>
   {@render children?.()}
   {#if search}
-    <button class="search-box" onclick={() => app.go({ name: "search" })}>⌕ {placeholder} <kbd>⌘K</kbd></button>
+    <button class="search-box" onclick={() => app.go({ name: "search" })}><span class="icon">⌕</span> <span class="label">{placeholder}</span> <kbd>⌘K</kbd></button>
   {/if}
 </div>
