@@ -272,7 +272,7 @@
   async function close() {
     saveProgress(true);
     if (await isFullscreen()) await setFullscreen(false);
-    app.player = null;
+    app.closePlayer();
   }
 
   function chooseAspect(a: P.Aspect) {

@@ -8,9 +8,13 @@ describe("progress", () => {
     expect(P.progressKey("https://tv.example/movie/me/secret/55.mp4")).toBe("movie/55.mp4");
   });
 
-  it("the last minute counts as finished, and resume skips the very start and the end", () => {
-    expect(P.finished([2_345_000, 2_400_000])).toBe(true);
-    expect(P.finished([2_330_000, 2_400_000])).toBe(false);
+  it("the credits count as finished, and resume skips the very start and the end", () => {
+    // 40 minutes: the last 2 minutes (5%) are credits.
+    expect(P.finished([2_285_000, 2_400_000])).toBe(true);
+    expect(P.finished([2_270_000, 2_400_000])).toBe(false);
+    // 10 minutes: at least the last minute.
+    expect(P.finished([545_000, 600_000])).toBe(true);
+    expect(P.finished([530_000, 600_000])).toBe(false);
     expect(P.resumePosition([10_000, 2_400_000])).toBe(0);
     expect(P.resumePosition([90_000, 2_400_000])).toBe(90_000);
     expect(P.resumePosition([2_390_000, 2_400_000])).toBe(0);

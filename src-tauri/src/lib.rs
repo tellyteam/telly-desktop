@@ -1,6 +1,7 @@
 mod relay;
 mod remux;
 mod secure;
+mod sync;
 
 use secure::Secure;
 use tauri::{Manager, State};
@@ -93,6 +94,7 @@ pub fn run() {
             store_delete,
             vlc_available,
             open_in_vlc,
+            sync::sync_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running telly");

@@ -1,13 +1,38 @@
 <script lang="ts">
   import TopBar from "../components/TopBar.svelte";
   import { inApp, openExternal, vlcAvailable } from "../lib/backend";
-  import { ago, app } from "../lib/state.svelte";
+  import { ago, app, DEFAULT_RELAY } from "../lib/state.svelte";
+  import { formatCode } from "../lib/sync/crypto";
   import { RELEASES_PAGE } from "../lib/updates";
 
   let vlc = $state(false);
   let confirmSignOut = $state(false);
   let clearing = $state(false);
+  let confirmClearProgress = $state(false);
   vlcAvailable().then((v) => (vlc = v));
+
+  let joining = $state(false);
+  let joinCode = $state("");
+  let relay = $state(DEFAULT_RELAY);
+  let showCode = $state(false);
+  let linking = $state(false);
+  let syncError = $state<string | null>(null);
+
+  async function link(code?: string) {
+    linking = true;
+    syncError = null;
+    try {
+      await app.startSync(code, relay.trim());
+      joining = false;
+      joinCode = "";
+      showCode = code === undefined;
+    } catch (e) {
+      syncError = (e as Error).message;
+      if (!app.syncStatus.at) await app.stopSync();
+    } finally {
+      linking = false;
+    }
+  }
 
   const p = $derived(app.provider!);
   const toggle = (key: "autoNext" | "offerVlc") => { app.settings[key] = !app.settings[key]; app.saveSettings(); };
@@ -32,6 +57,26 @@
         <button class="switch" class:on={app.settings.offerVlc} aria-label="Offer VLC" onclick={() => toggle("offerVlc")}></button></div>
       <div class="line"><div>Keyboard<small>Space pause · ← → 10 seconds · ↑ ↓ volume · F full screen · N next episode · M mute · Esc back</small></div></div>
     </div>
+    <div class="panel"><h4>Sync</h4>
+      {#if app.sync}
+        <div class="line"><div>Keeping your place in sync<small>{app.syncStatus.busy ? "Syncing now…" : `Last synced ${ago(app.syncStatus.at)}`}{app.syncStatus.error ? ` · ${app.syncStatus.error}` : ""}</small></div>
+          <div class="btns"><button class="btn small" disabled={app.syncStatus.busy} onclick={() => app.syncNow()}>Sync now</button>
+            <button class="btn small" onclick={() => app.stopSync()}>Stop syncing on this Mac</button></div></div>
+        <div class="line"><div>Link another device<small>Enter this code in Settings → Sync on your Fire TV, LG TV or iPad. Keep it private: anyone with it can see what you've watched.</small></div>
+          {#if showCode}<code class="sync-code">{formatCode(app.sync.code)}</code>{:else}<button class="btn small" onclick={() => (showCode = true)}>Show code</button>{/if}</div>
+      {:else}
+        <div class="line"><div>Pick up where you left off on your other devices<small>Shares progress, Continue watching and My List, end-to-end encrypted. Your provider login is never shared; sign in on each device.</small></div>
+          <div class="btns"><button class="btn small primary" disabled={linking || !relay.trim()} onclick={() => link()}>Start syncing</button>
+            <button class="btn small" disabled={linking} onclick={() => (joining = !joining)}>I have a code</button></div></div>
+        {#if joining}
+          <div class="line"><div class="field" style="flex:1"><input placeholder="ABCD-EFGH-JKMN-PQRS" bind:value={joinCode} maxlength="19" spellcheck="false" autocomplete="off" /></div>
+            <button class="btn small primary" disabled={linking || !joinCode.trim() || !relay.trim()} onclick={() => link(joinCode)}>{linking ? "Linking…" : "Link"}</button></div>
+        {/if}
+        <div class="line"><div>Relay<small>Only sealed data passes through it. Change this only if you run your own.</small></div>
+          <div class="field" style="width:320px"><input placeholder="https://…" bind:value={relay} spellcheck="false" autocomplete="off" /></div></div>
+        {#if syncError}<div class="notice">{syncError}</div>{/if}
+      {/if}
+    </div>
     <div class="panel"><h4>Updates</h4>
       {#if app.update.latest}
         <div class="notice" style="margin-bottom:8px">telly {app.update.latest.version} is available.{#if app.update.latest.notes}<br /><small>{app.update.latest.notes.split("\n")[0]}</small>{/if}</div>
@@ -48,7 +93,10 @@
         <button class="btn small" disabled={app.refreshing} onclick={() => app.refresh()}>Refresh</button></div>
       <div class="line"><div>Clear saved lists<small>Downloads everything afresh. Your login, My List and progress are kept.</small></div>
         <button class="btn small" disabled={clearing || app.refreshing} onclick={async () => { clearing = true; await app.clearSavedData(); clearing = false; }}>{clearing ? "Clearing…" : "Clear"}</button></div>
+      <div class="line"><div>Clear watch progress<small>Forgets where you got to in every film and episode, and empties Continue watching. My List is kept.{app.sync ? " Your linked devices are cleared too." : ""}</small></div>
+        {#if confirmClearProgress}<div class="btns"><button class="btn small" onclick={() => { app.clearProgress(); confirmClearProgress = false; }}>Clear it all</button><button class="btn small" onclick={() => (confirmClearProgress = false)}>Cancel</button></div>
+        {:else}<button class="btn small" onclick={() => (confirmClearProgress = true)}>Clear</button>{/if}</div>
     </div>
-    <p class="hint">telly is free software (GPL-3.0). It talks only to your provider, and to GitHub once a week to check for updates. No accounts, analytics or tracking.</p>
+    <p class="hint">telly is free software (GPL-3.0). It talks only to your provider, to GitHub once a week to check for updates and, if you turn on sync, to the sync relay. No accounts, analytics or tracking.</p>
   </div>
 </div>

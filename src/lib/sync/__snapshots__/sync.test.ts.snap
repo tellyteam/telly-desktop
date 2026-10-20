@@ -1,0 +1,10 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keys and sealing > matches the shared test vector 1`] = `
+{
+  "auth": "U4UwJNTeVMR0DU0Bem7LRlBoeCR4UAL9ouKh7CuGXjQ",
+  "key": "b98184ea929152cda7eb1b420ea2d4445b5c01aa84480b86670365cb2310586e",
+  "mailbox": "964c34622b2ead29bde1300eddb81273",
+  "sealed": "01000102030405060708090a0b8c30ca4029013ae61434a3351cb312ca06d33a229d9dd9",
+}
+`;

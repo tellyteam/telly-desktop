@@ -3,6 +3,10 @@ import type { Channel, Group, Provider, Series } from "./model";
 import * as P from "./playback";
 import * as repo from "./repo";
 import { isNewer, latestRelease, WEEK_MS, type Release } from "./updates";
+import { syncOnce, leave as leaveRelay, SyncError } from "./sync/client";
+import { deriveKeys, newCode, newDeviceId, normaliseCode } from "./sync/crypto";
+import { apply as applySync, emptyLedger, toParcel, type Ledger } from "./sync/local";
+import type { HistoryEntry } from "./sync/parcel";
 
 export type Route =
   | { name: "home" | "search" | "live" | "series" | "films" | "mylist" | "settings" }
@@ -35,6 +39,19 @@ interface Meta {
   updateCheckedAt?: number;
 }
 
+/** Kept in the Keychain: the link code is the household's only secret. */
+export interface SyncConfig {
+  code: string;
+  device: string;
+  relay: string;
+}
+
+/** The relay telly uses unless you run your own (see telly-sync). */
+export const DEFAULT_RELAY = "";
+
+/** Never more often than this when the window regains focus. */
+const SYNC_GAP_MS = 60_000;
+
 export type FavKind = "live" | "film" | "series";
 export const favKey = (kind: FavKind, id: string) => `${kind}:${id}`;
 
@@ -56,6 +73,9 @@ class App {
   history = $state<P.LastWatched[]>([]);
   aspects = $state<Record<string, string>>({});
   settings = $state<Settings>({ autoNext: true, offerVlc: true });
+  sync = $state<SyncConfig | null>(null);
+  syncStatus = $state<{ busy: boolean; at?: number; error?: string }>({ busy: false });
+  private ledger: Ledger = emptyLedger();
 
   route = $state<Route>({ name: "home" });
   private back: Route[] = [];
@@ -71,7 +91,7 @@ class App {
 
   async start() {
     await backend.initBackend();
-    const [fav, prog, hist, asp, set, meta, savedProvider, version] = await Promise.all([
+    const [fav, prog, hist, asp, set, meta, savedProvider, version, ledger, savedSync] = await Promise.all([
       backend.storeRead<string[]>("favourites"),
       backend.storeRead<Record<string, P.Progress>>("progress"),
       backend.storeRead<P.LastWatched[]>("history"),
@@ -80,6 +100,8 @@ class App {
       backend.storeRead<Meta>("meta"),
       backend.secretGet("provider").catch(() => null),
       backend.appVersion(),
+      backend.storeRead<Ledger>("sync-ledger"),
+      backend.secretGet("sync").catch(() => null),
     ]);
     this.favourites = fav ?? [];
     this.progress = prog ?? {};
@@ -88,6 +110,11 @@ class App {
     this.settings = { ...this.settings, ...set };
     this.meta = meta ?? {};
     this.update.current = version;
+    this.ledger = { ...emptyLedger(), ...ledger };
+    this.sync = parseSync(savedSync);
+    window.addEventListener("focus", () => {
+      if (!this.player && Date.now() - (this.syncStatus.at ?? 0) > SYNC_GAP_MS) void this.syncNow();
+    });
 
     const provider = parseProvider(savedProvider);
     if (!provider) {
@@ -110,7 +137,7 @@ class App {
       repo.seriesGroups(p, "cache").catch(() => undefined),
     ]);
     this.setCatalogues(live ?? null, films ?? null, series ?? null);
-    void this.refresh();
+    void this.refresh().then(() => this.syncNow());
   }
 
   private setCatalogues(live: Group<Channel>[] | null, films: Group<Channel>[] | null, series: Group<Series>[] | null) {
@@ -254,8 +281,12 @@ class App {
 
   toggleFavourite(kind: FavKind, id: string) {
     const key = favKey(kind, id);
-    this.favourites = this.favourites.includes(key) ? this.favourites.filter((k) => k !== key) : [key, ...this.favourites];
+    const on = !this.favourites.includes(key);
+    this.favourites = on ? [key, ...this.favourites] : this.favourites.filter((k) => k !== key);
     backend.storeWrite("favourites", this.favourites, 0);
+    this.ledger.list[key] = [Date.now(), on];
+    this.saveLedger();
+    this.syncSoon();
   }
 
   favouriteItems() {
@@ -276,7 +307,7 @@ class App {
 
   saveProgress(url: string, pos: number, dur: number) {
     if (!(dur > 0) || !Number.isFinite(dur)) return;
-    this.progress[P.progressKey(url)] = [Math.round(Math.min(Math.max(pos, 0), dur)), Math.round(dur)];
+    this.progress[P.progressKey(url)] = [Math.round(Math.min(Math.max(pos, 0), dur)), Math.round(dur), Date.now()];
     backend.storeWrite("progress", this.progress, 2000);
   }
 
@@ -308,6 +339,118 @@ class App {
   removeFromHistory(h: P.LastWatched) {
     this.history = this.history.filter((x) => P.slot(x) !== P.slot(h));
     backend.storeWrite("history", this.history, 0);
+    this.ledger.removed[P.slot(h)] = Date.now();
+    this.saveLedger();
+    this.syncSoon();
+  }
+
+  /** Forgets every position and Continue watching (My List stays). With sync on, on every linked device too. */
+  clearProgress() {
+    this.progress = {};
+    this.history = [];
+    this.ledger = { ...this.ledger, removed: {}, cleared: Date.now() };
+    backend.storeWrite("progress", this.progress, 0);
+    backend.storeWrite("history", this.history, 0);
+    this.saveLedger();
+    void this.syncNow();
+  }
+
+  /** Leaving the player saves progress, then shares it. */
+  closePlayer() {
+    this.player = null;
+    backend.flushWrites();
+    void this.syncNow();
+  }
+
+  // ---- Sync ----
+
+  /** Starts a new household with a fresh code, or joins one with [code]. */
+  async startSync(code?: string, relay = DEFAULT_RELAY) {
+    const normal = code === undefined ? newCode() : normaliseCode(code);
+    if (!normal) throw new SyncError("That code isn't right: it's 16 letters and numbers, like ABCD-EFGH-JKMN-PQRS.");
+    if (!relay) throw new SyncError("No sync relay is set.");
+    const config: SyncConfig = { code: normal, device: this.sync?.device ?? newDeviceId(), relay };
+    await backend.secretSet("sync", JSON.stringify(config));
+    this.sync = config;
+    await this.syncNow();
+    if (this.syncStatus.error) throw new SyncError(this.syncStatus.error);
+  }
+
+  /** Takes this computer out of sync: its copy leaves the relay; the other devices keep theirs. */
+  async stopSync() {
+    const config = this.sync;
+    if (!config) return;
+    try {
+      await leaveRelay(backend.syncTransport, config.relay, deriveKeys(config.code), config.device);
+    } catch (e) {
+      console.warn("Couldn't remove this device from the relay", e);
+    }
+    await backend.secretDelete("sync");
+    this.sync = null;
+    this.syncStatus = { busy: false };
+  }
+
+  private syncTimer?: ReturnType<typeof setTimeout>;
+
+  /** After small changes (My List, removals): soon, but once for a burst of them. */
+  private syncSoon() {
+    clearTimeout(this.syncTimer);
+    this.syncTimer = setTimeout(() => void this.syncNow(), 3000);
+  }
+
+  /** Fetches the other devices' changes, takes in what's newer and shares the result. Never during playback. */
+  async syncNow() {
+    const config = this.sync;
+    if (!config || this.syncStatus.busy || this.player) return;
+    this.syncStatus = { ...this.syncStatus, busy: true, error: undefined };
+    try {
+      const now = Date.now();
+      const local = { progress: this.progress, history: this.history, favourites: this.favourites, ledger: this.ledger };
+      const merged = await syncOnce(backend.syncTransport, config.relay, deriveKeys(config.code), config.device, toParcel($state.snapshot(local) as typeof local, now), now);
+      if (this.sync !== config) return;
+      const next = await applySync($state.snapshot(local) as typeof local, merged, (e) => this.resolve(e));
+      // Playback may have started meanwhile; its own saves win.
+      if (this.player) return;
+      this.progress = next.progress;
+      this.history = next.history;
+      this.favourites = next.favourites;
+      this.ledger = next.ledger;
+      backend.storeWrite("progress", this.progress, 0);
+      backend.storeWrite("history", this.history, 0);
+      backend.storeWrite("favourites", this.favourites, 0);
+      this.saveLedger();
+      this.syncStatus = { busy: false, at: Date.now() };
+    } catch (e) {
+      this.syncStatus = { ...this.syncStatus, busy: false, error: e instanceof SyncError ? e.message : "Couldn't reach the sync relay." };
+      console.warn("Sync failed", e);
+    }
+  }
+
+  private saveLedger() {
+    backend.storeWrite("sync-ledger", this.ledger, 0);
+  }
+
+  /** A shared history entry as one this computer can play, from its own lists and login. */
+  private async resolve(e: HistoryEntry): Promise<P.LastWatched | null> {
+    if (e.kind === "film") {
+      const f = this.film(e.id);
+      return f ? { heading: P.FILM, live: false, index: 0, items: [f], art: f.logo, at: e.at } : null;
+    }
+    if (e.kind === "live") {
+      const c = this.liveChannel(e.id);
+      if (!c) return null;
+      const items = this.live?.find((g) => g.name === c.group)?.items ?? [c];
+      return { heading: "Live TV", live: true, index: Math.max(0, items.findIndex((x) => x.id === c.id)), items, at: e.at };
+    }
+    const s = e.series ? this.seriesItem(e.series) : undefined;
+    const p = this.provider;
+    if (!s || !p) return null;
+    const data = (await repo.seriesData(p, s, "cache").catch(() => undefined)) ?? (await repo.seriesData(p, s, "network"));
+    for (const season of data?.seasons ?? []) {
+      const index = season.episodes.findIndex((ep) => ep.id === e.id);
+      if (index >= 0) return { heading: s.name, live: false, index, items: season.episodes, seriesId: s.id, art: s.cover, at: e.at };
+    }
+    return null;
   }
 
   // ---- Aspect ----
@@ -342,6 +485,15 @@ class App {
     } finally {
       this.update.checking = false;
     }
+  }
+}
+
+function parseSync(text: string | null): SyncConfig | null {
+  try {
+    const c = text ? (JSON.parse(text) as SyncConfig) : null;
+    return c && normaliseCode(c.code) && /^[0-9a-f]{16}$/.test(c.device) && c.relay ? c : null;
+  } catch {
+    return null;
   }
 }
 

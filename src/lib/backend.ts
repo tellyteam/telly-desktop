@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { fetchTransport, type RelayResponse, type Transport } from "./sync/client";
 
 /**
  * Everything native, behind one small surface. In the app it's the Rust core; under `npm run dev`
@@ -134,6 +135,14 @@ export async function storeDelete(name: string): Promise<void> {
   if (inApp) return invoke("store_delete", { name });
   localStorage.removeItem(`telly.store.${name}`);
 }
+
+// ---- Sync ----
+
+/** Relay requests go through the Rust core in the app (see sync.rs), and plain fetch in development. */
+export const syncTransport: Transport = async (r) => {
+  if (!inApp) return fetchTransport(r);
+  return invoke<RelayResponse>("sync_request", { method: r.method, url: r.url, auth: r.auth, body: r.body ? Array.from(r.body) : null });
+};
 
 // ---- Desktop bits ----
 

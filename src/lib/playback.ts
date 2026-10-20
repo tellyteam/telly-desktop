@@ -9,11 +9,17 @@ import type { Channel } from "./model";
 export const END_MARGIN_MS = 60_000;
 const MIN_RESUME_MS = 15_000;
 
-/** [position, duration] in ms. */
-export type Progress = [number, number];
+/** [position, duration, saved at] in ms; older records have no time. */
+export type Progress = [number, number, number?];
+
+/**
+ * How close to the end counts as watched: the last minute, or the last 5% when that's longer
+ * (long episodes often run two or three minutes of credits). The same rule as on Fire TV.
+ */
+export const endMargin = (dur: number) => Math.max(END_MARGIN_MS, dur / 20);
 
 export const fraction = ([pos, dur]: Progress) => Math.min(1, Math.max(0, pos / dur));
-export const finished = ([pos, dur]: Progress) => dur - pos < END_MARGIN_MS;
+export const finished = ([pos, dur]: Progress) => dur - pos < endMargin(dur);
 
 /**
  * Xtream stream URLs embed the username and password (`/series/user/pass/123.mkv`), so the key

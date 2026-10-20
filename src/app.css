@@ -237,3 +237,4 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 
 .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid rgba(255,255,255,.15); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 .center { position: absolute; inset: 0; display: grid; place-items: center; }
+.sync-code { white-space: nowrap; font: 600 17px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .08em; padding: 6px 12px; border-radius: 8px; background: rgba(255,255,255,.06); user-select: text; -webkit-user-select: text; }
