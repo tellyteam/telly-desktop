@@ -263,3 +263,5 @@ html.tv .card:focus { transform: none; box-shadow: 0 0 0 3px var(--accent), 0 10
 html.tv .card:focus .play, html.tv .card:focus .heart { opacity: 1; }
 /* No window controls or drag areas on a TV. */
 html.tv .topbar { padding-left: var(--pad); }
+html.tv .card:focus { box-shadow: 0 0 0 4px var(--accent), 0 0 0 7px rgba(79,195,247,.25), 0 14px 34px rgba(79,195,247,.3); }
+html.tv .ctrls .ic:focus, html.tv .back:focus { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 50%; }

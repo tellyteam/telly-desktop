@@ -50,8 +50,14 @@ export function nearest(from: DOMRect, dir: Dir, candidates: HTMLElement[]): HTM
   return best;
 }
 
+/**
+ * Everything the remote can land on. Buttons inside a card (the ♥) aren't separate stops on a TV:
+ * the card is one stop, and My List is on its page.
+ */
 function focusables(root: ParentNode): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(visible);
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)]
+    .filter((el) => el.classList.contains("card") || !el.closest(".card"))
+    .filter(visible);
 }
 
 function focus(el: HTMLElement) {
@@ -64,7 +70,9 @@ export function focusFirst(root: ParentNode = document) {
   const active = document.activeElement as HTMLElement | null;
   if (active && active !== document.body && visible(active) && document.contains(active)) return;
   const main = (root as Document).querySelector?.("main") ?? root;
-  const first = focusables(main)[0] ?? focusables(root)[0];
+  // A page's main action first (Play on a film), then the first thing in it.
+  const primary = [...main.querySelectorAll<HTMLElement>(".btn.primary")].find(visible);
+  const first = primary ?? focusables(main)[0] ?? focusables(root)[0];
   if (first) first.focus({ preventScroll: true });
 }
 
@@ -72,7 +80,9 @@ export function focusFirst(root: ParentNode = document) {
  * Starts remote-control handling. [suspended] says when something else (the player) handles the
  * arrow keys itself.
  */
-export function startTv(suspended: () => boolean) {
+export function startTv(suspendedBase: () => boolean) {
+  // The player handles its own keys, except while the remote is in its control bar or a menu.
+  const suspended = () => suspendedBase() && !(document.activeElement as HTMLElement | null)?.closest?.(".ctrls, .menu, .back");
   document.documentElement.classList.add("tv");
 
   window.addEventListener("keydown", (e) => {

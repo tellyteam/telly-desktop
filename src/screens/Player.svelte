@@ -349,8 +349,19 @@
     if (e.metaKey || e.ctrlKey) return;
     const handled = true;
     // On a TV the remote has its own volume buttons: Up and Down just show the controls, OK plays or pauses.
-    if (isWebOS && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); return; }
-    if (isWebOS && k === "Enter" && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); togglePlay(); return; }
+    if (isWebOS) {
+      const inBar = (document.activeElement as HTMLElement | null)?.closest?.(".ctrls, .menu, .back");
+      // In the control bar (or a menu), the remote moves between buttons as everywhere else.
+      if (inBar && k.startsWith("Arrow")) return;
+      if (k === "ArrowDown" || k === "ArrowUp") {
+        e.preventDefault();
+        // The controls appear on this key press; focus them once they're drawn.
+        requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector<HTMLElement>(".ctrls .ic.big")?.focus()));
+        return;
+      }
+      if (k === "Enter" && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); togglePlay(); return; }
+      if (k === "Escape" && inBar && !menu) { e.preventDefault(); (document.activeElement as HTMLElement).blur(); return; }
+    }
     switch (k) {
       case " ": case "k": togglePlay(); break;
       case "ArrowLeft": case "j": seekBy(-10_000); break;
@@ -400,6 +411,8 @@
     ro.observe(stage);
     void load(index, request.startAt);
     wake();
+    // On a TV the remote now talks to the player, not to whatever was focused behind it.
+    if (isWebOS) stage.focus({ preventScroll: true });
     return () => ro.disconnect();
   });
 
@@ -422,7 +435,7 @@
 <svelte:window {onkeydown} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="player" class:awake={awake || !playing || !!error} onmousemove={wake} bind:this={stage}>
+<div class="player" data-focus-scope tabindex="-1" class:awake={awake || !playing || !!error} onmousemove={wake} bind:this={stage}>
   <!-- svelte-ignore a11y_media_has_caption -->
   <video bind:this={video} playsinline
     style:transform="scale({scale[0]}, {scale[1]})"
@@ -513,18 +526,18 @@
           <button class="ic" data-tip="Forward 10s (→)" aria-label="Forward 10s (→)" onclick={() => seekBy(10_000)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12a8 8 0 1 1-3-6.2M20 4v4h-4" /></svg></button>
           {#if hasNext}<button class="ic" data-tip="Next episode (N)" aria-label="Next episode (N)" onclick={() => go(index + 1, 0)}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5l9 7-9 7zM16 5h3v14h-3z" /></svg></button>{/if}
         {/if}
-        <button class="ic" data-tip={muted ? "Unmute (M)" : "Mute (M)"} aria-label={muted ? "Unmute (M)" : "Mute (M)"} onclick={() => (muted = !muted)}>
+        {#if !isWebOS}<button class="ic" data-tip={muted ? "Unmute (M)" : "Mute (M)"} aria-label={muted ? "Unmute (M)" : "Mute (M)"} onclick={() => (muted = !muted)}>
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 9h4l5-4v14l-5-4H4z" />{#if !muted && volume > 0}<path d="M16 8a5 5 0 0 1 0 8" fill="none" stroke="currentColor" stroke-width="2" />{:else}<path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" />{/if}</svg>
         </button>
         <input class="vol" type="range" min="0" max="1" step="0.01" value={muted ? 0 : volume} aria-label="Volume"
           oninput={(e) => { volume = Number((e.target as HTMLInputElement).value); muted = false; try { localStorage.setItem("telly.volume", String(volume)); } catch { /* ignore */ } }}
-          style:--v="{(muted ? 0 : volume) * 100}%" />
+          style:--v="{(muted ? 0 : volume) * 100}%" />{/if}
         <div class="grow"></div>
         {#if !live}<button class="ic" data-tip="Speed" aria-label="Speed" onclick={() => (menu = menu === "speed" ? null : "speed")}>{speed === 1 ? "1×" : `${speed}×`}</button>{/if}
         <button class="ic" data-tip="Audio & subtitles" aria-label="Audio & subtitles" onclick={() => { readTracks(); menu = menu === "tracks" ? null : "tracks"; }}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5h16v14H4zm2 9h5v2H6zm7 0h5v2h-5zm-7-3h12v2H6z" /></svg></button>
         <button class="ic" data-tip="Aspect ratio (A)" aria-label="Aspect ratio (A)" onclick={() => (menu = menu === "aspect" ? null : "aspect")}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" /></svg></button>
         {#if vlc}<button class="ic" data-tip="Open in VLC" aria-label="Open in VLC" onclick={playInVlc}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 9H9zM8 13h8l1.5 4h-11zM4 19h16v3H4z" /></svg></button>{/if}
-        <button class="ic" data-tip="Picture in picture (P)" aria-label="Picture in picture (P)" onclick={togglePip}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 11h-8v6h8v-6zm4 8V5c0-1.1-.9-2-2-2H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 0H3V5h18v14z" /></svg></button>
+        {#if !isWebOS}<button class="ic" data-tip="Picture in picture (P)" aria-label="Picture in picture (P)" onclick={togglePip}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 11h-8v6h8v-6zm4 8V5c0-1.1-.9-2-2-2H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 0H3V5h18v14z" /></svg></button>{/if}
         <button class="ic" data-tip="Full screen (F)" aria-label="Full screen (F)" onclick={toggleFullscreen}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg></button>
       </div>
     </div>
