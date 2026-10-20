@@ -2,10 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { fetchTransport, type RelayResponse, type Transport } from "./sync/client";
 
 /**
- * Everything native, behind one small surface. In the app it's the Rust core; under `npm run dev`
- * in a plain browser it's the Vite dev server's relay plus localStorage, so the UI can be worked on
- * without building the app.
+ * Everything native, behind one small surface. In the Mac app it's the Rust core; on an LG TV
+ * (webOS) the TV itself fetches and plays everything directly; under `npm run dev` in a plain
+ * browser it's the Vite dev server's relay plus localStorage, so the UI can be worked on without
+ * building the app.
  */
+
+/** Built for LG TVs (`npm run build:webos`). */
+export const isWebOS = import.meta.env.VITE_TARGET === "webos";
 
 export const inApp = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 /** Safari's engine (the app's web view), as opposed to Chromium (a browser running `npm run dev`). */
@@ -15,7 +19,7 @@ let relayBase = "";
 let cleartext = false;
 
 export async function initBackend(): Promise<void> {
-  relayBase = inApp ? await invoke<string>("relay_base") : `${location.origin}/__relay/dev`;
+  relayBase = inApp ? await invoke<string>("relay_base") : isWebOS ? "" : `${location.origin}/__relay/dev`;
 }
 
 /** Follows the active provider's "allow plain HTTP" setting. */
@@ -35,6 +39,8 @@ function b64url(s: string): string {
  * `probe` and `remux` are for films the Mac can't open directly (see [probeFilm]).
  */
 export function relayUrl(target: string, opts: { hls?: boolean; probe?: boolean; remux?: boolean } = {}): string {
+  // The TV needs no relay: packaged webOS apps may fetch and play from any address.
+  if (isWebOS) return target;
   const flags = (cleartext ? "c" : "") + (opts.hls ? "h" : "") + (opts.probe ? "p" : "") + (opts.remux ? "m" : "") || "-";
   let name = "x";
   try {
@@ -147,6 +153,7 @@ export const syncTransport: Transport = async (r) => {
 // ---- Desktop bits ----
 
 export async function vlcAvailable(): Promise<boolean> {
+  if (isWebOS) return false;
   return inApp ? invoke<boolean>("vlc_available") : false;
 }
 
@@ -168,6 +175,7 @@ export async function setFullscreen(on: boolean): Promise<void> {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     return getCurrentWindow().setFullscreen(on);
   }
+  if (isWebOS) return; // always full screen
   if (on) await document.documentElement.requestFullscreen?.();
   else if (document.fullscreenElement) await document.exitFullscreen();
 }
@@ -177,7 +185,7 @@ export async function isFullscreen(): Promise<boolean> {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     return getCurrentWindow().isFullscreen();
   }
-  return !!document.fullscreenElement;
+  return isWebOS || !!document.fullscreenElement;
 }
 
 export async function appVersion(): Promise<string> {

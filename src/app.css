@@ -45,6 +45,7 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 @keyframes spin { to { transform: rotate(360deg); } }
 .narrow { --rail: 64px; --pad: 24px; }
 .narrow .wordmark { font-size: 17px; padding: 0 6px 18px; }
+.narrow .wordmark .wordmark-svg { height: 17px !important; }
 .narrow .nav span, .narrow .nav .k, .narrow .nav small { display: none; }
 
 .main { flex: 1; min-width: 0; position: relative; }
@@ -252,3 +253,13 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 .topbar { height: 64px; }
 .topbar .search-box { white-space: nowrap; overflow: hidden; min-width: 0; }
 .topbar .search-box .label { overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- LG TVs: sized for the sofa, and the remote's focus always visible ---- */
+html.tv { zoom: 1.45; cursor: default; }
+html.tv :focus { outline: none; }
+html.tv :focus-visible, html.tv .card:focus, html.tv button:focus, html.tv [tabindex]:focus, html.tv input:focus {
+  outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
+html.tv .card:focus { transform: none; box-shadow: 0 0 0 3px var(--accent), 0 10px 30px rgba(79,195,247,.25); outline: none; }
+html.tv .card:focus .play, html.tv .card:focus .heart { opacity: 1; }
+/* No window controls or drag areas on a TV. */
+html.tv .topbar { padding-left: var(--pad); }

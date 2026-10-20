@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ago, app, type Route } from "../lib/state.svelte";
+  import Wordmark from "./Wordmark.svelte";
 
   const mod = "⌘";
   const icons: Record<string, string> = {
@@ -23,7 +24,7 @@
 </script>
 
 <nav class="rail drag" data-tauri-drag-region>
-  <div class="wordmark" data-tauri-drag-region>telly</div>
+  <div class="wordmark" data-tauri-drag-region><Wordmark height={26} /></div>
   {#each items.filter(([id]) => !(m3u && (id === "series" || id === "films"))) as [id, label, k]}
     <button class="nav" class:current={section(app.route) === id} onclick={() => app.go({ name: id })} title={label}>
       <svg viewBox="0 0 24 24" fill="currentColor">{@html icons[id]}</svg><span>{label}</span><kbd class="k">{k}</kbd>

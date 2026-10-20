@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { isFullscreen, openInVlc, probeFilm, setFullscreen, vlcAvailable, type FilmProbe } from "../lib/backend";
+  import { isFullscreen, isWebOS, openInVlc, probeFilm, setFullscreen, vlcAvailable, type FilmProbe } from "../lib/backend";
   import * as P from "../lib/playback";
   import { app, type PlayRequest } from "../lib/state.svelte";
   import { attach, type Attached, type Track } from "../lib/video";
@@ -348,6 +348,9 @@
     }
     if (e.metaKey || e.ctrlKey) return;
     const handled = true;
+    // On a TV the remote has its own volume buttons: Up and Down just show the controls, OK plays or pauses.
+    if (isWebOS && (k === "ArrowUp" || k === "ArrowDown")) { e.preventDefault(); return; }
+    if (isWebOS && k === "Enter" && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); togglePlay(); return; }
     switch (k) {
       case " ": case "k": togglePlay(); break;
       case "ArrowLeft": case "j": seekBy(-10_000); break;

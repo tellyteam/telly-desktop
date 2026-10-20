@@ -8,3 +8,5 @@ provider.local.properties
 # FFmpeg is built by scripts/build-ffmpeg.sh, not committed
 .ffmpeg-build/
 src-tauri/binaries/
+dist-webos/
+build-webos/

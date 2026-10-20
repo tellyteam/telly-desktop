@@ -1,6 +1,6 @@
 import type Hls from "hls.js";
 import type Mpegts from "mpegts.js";
-import { isWebKit, relayUrl, remuxUrl, type FilmProbe } from "./backend";
+import { isWebKit, isWebOS, relayUrl, remuxUrl, type FilmProbe } from "./backend";
 import { engineFor } from "./playback";
 
 /**
@@ -86,6 +86,9 @@ export async function attach(video: HTMLVideoElement, url: string, opts: AttachO
 
   if (opts.remux) return attachRemux(video, src, opts.remux.probe, opts.remux.audio, opts, fail);
 
+  // LG TVs play HLS, MPEG-TS, MKV and the rest in their own media pipeline, with hardware decoding.
+  if (isWebOS) return attachNative(video, src, opts, fail);
+
   if (engine === "hls" && !(isWebKit && video.canPlayType("application/vnd.apple.mpegurl"))) {
     const { default: HlsJs } = await import("hls.js");
     if (HlsJs.isSupported()) return attachHls(HlsJs, video, src, opts, fail);
@@ -96,7 +99,11 @@ export async function attach(video: HTMLVideoElement, url: string, opts: AttachO
     if (mpegts.getFeatureList().mseLivePlayback) return attachMpegts(mpegts, video, src, opts, fail);
   }
 
-  // Native: HLS on a Mac, or a plain file.
+  return attachNative(video, src, opts, fail);
+}
+
+/** The video element itself: HLS on a Mac, a plain file, or anything on an LG TV. */
+function attachNative(video: HTMLVideoElement, src: string, opts: AttachOptions, fail: (msg: string) => void): Attached {
   const onError = () => {
     const code = video.error?.code;
     fail(code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED || code === MediaError.MEDIA_ERR_DECODE

@@ -126,7 +126,8 @@ class App {
     }
     await this.useProvider(provider);
     this.ready = true;
-    if (Date.now() - (this.meta.updateCheckedAt ?? 0) > WEEK_MS) void this.checkForUpdate(false);
+    // TVs are updated by reinstalling from the computer, not from GitHub.
+    if (!backend.isWebOS && Date.now() - (this.meta.updateCheckedAt ?? 0) > WEEK_MS) void this.checkForUpdate(false);
   }
 
   /** Shows the saved lists straight away, then refreshes them in the background. */

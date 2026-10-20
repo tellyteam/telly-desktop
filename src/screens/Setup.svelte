@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { inApp } from "../lib/backend";
+  import { inApp, isWebOS } from "../lib/backend";
   import type { Provider } from "../lib/model";
   import { app } from "../lib/state.svelte";
+  import Wordmark from "../components/Wordmark.svelte";
 
   let { editing = false }: { editing?: boolean } = $props();
 
@@ -38,7 +39,7 @@
     }
     busy = true;
     error = null;
-    const label = name.trim() || "My provider";
+    const label = name.trim() || "Your provider";
     const p: Provider = kind === "xtream"
       ? { kind, name: label, server: server.trim(), username: username.trim(), password, allowCleartext }
       : { kind, name: label, url: url.trim(), allowCleartext };
@@ -54,13 +55,13 @@
 
 <div class="setup drag" data-tauri-drag-region>
   <form class="card-form" onsubmit={connect}>
-    <div class="wordmark big">telly</div>
+    <div class="wordmark big"><Wordmark height={44} /></div>
     <p class="lead">{editing ? "Your provider" : "Add your IPTV provider to start watching. telly doesn't come with any channels."}</p>
     <div class="chips" style="padding:0 0 6px">
       <button type="button" class="chip" class:sel={kind === "xtream"} onclick={() => (kind = "xtream")}>Xtream Codes</button>
       <button type="button" class="chip" class:sel={kind === "m3u"} onclick={() => (kind = "m3u")}>M3U playlist</button>
     </div>
-    <div class="field"><label for="name">Name (optional)</label><input id="name" bind:value={name} placeholder="My provider" autocomplete="off" /></div>
+    <div class="field"><label for="name">Name (optional)</label><input id="name" bind:value={name} placeholder="Your provider" autocomplete="off" /></div>
     {#if kind === "xtream"}
       <div class="field"><label for="server">Server address</label><input id="server" bind:value={server} placeholder="example.com:8080" autocomplete="off" spellcheck="false" /></div>
       <div class="two">
@@ -79,7 +80,7 @@
       <button class="btn primary" type="submit" disabled={!ready || busy}>{busy ? "Connecting…" : editing ? "Save" : "Connect"}</button>
       {#if editing}<button class="btn" type="button" onclick={() => app.goBack() || app.go({ name: "home" })}>Cancel</button>{/if}
     </div>
-    <p class="hint">Your login stays on this computer, in the macOS Keychain. telly only talks to your provider, and to GitHub once a week to check for updates.</p>
+    <p class="hint">{isWebOS ? "Your login stays on this TV. telly only talks to your provider." : "Your login stays on this computer, in the macOS Keychain. telly only talks to your provider, and to GitHub once a week to check for updates."}</p>
   </form>
 </div>
 

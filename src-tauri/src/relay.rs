@@ -209,6 +209,7 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
 
     let client = if target.allow_cleartext { &clients.lenient } else { &clients.strict };
     let range = request.headers().iter().find(|h| h.field.equiv("Range")).map(|h| h.value.as_str().to_string());
+    let trace = Trace::begin(range.as_deref());
     let send = |range: Option<&str>| {
         let mut upstream = client.get(target.url.clone());
         if let Some(r) = range {
@@ -233,9 +234,11 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
         // Troubleshooting only, and never the URL: Xtream URLs carry the login.
         let ext = final_url.path().rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(_, e)| e).unwrap_or("-");
         eprintln!(
-            "relay: .{ext} {status} {content_type} len={:?} range={}",
+            "relay: #{} .{ext} {status} {content_type} len={:?} range={} answered in {}ms",
+            trace.id,
             response.content_length(),
-            range.as_deref().unwrap_or("-")
+            range.as_deref().unwrap_or("-"),
+            trace.started.elapsed().as_millis()
         );
     }
     let looks_like_playlist = content_type.to_ascii_lowercase().contains("mpegurl")
@@ -271,7 +274,61 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
         }
     }
     let length = response.content_length().map(|l| l as usize);
-    let _ = request.respond(Response::new(StatusCode(status), headers, response, length, None));
+    let _ = request.respond(Response::new(StatusCode(status), headers, Traced { inner: response, trace }, length, None));
+}
+
+/// Troubleshooting (TELLY_RELAY_LOG): when each provider request starts, is answered and ends,
+/// and how many are open at once. Never the address.
+struct Trace {
+    id: usize,
+    started: std::time::Instant,
+    bytes: u64,
+    logging: bool,
+}
+
+static OPEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static NEXT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+
+impl Trace {
+    fn begin(range: Option<&str>) -> Trace {
+        use std::sync::atomic::Ordering::Relaxed;
+        let logging = std::env::var_os("TELLY_RELAY_LOG").is_some();
+        let id = NEXT_ID.fetch_add(1, Relaxed);
+        let open = OPEN.fetch_add(1, Relaxed) + 1;
+        if logging {
+            eprintln!("relay> #{id} asking range={} ({open} open)", range.unwrap_or("-"));
+        }
+        Trace { id, started: std::time::Instant::now(), bytes: 0, logging }
+    }
+}
+
+impl Drop for Trace {
+    fn drop(&mut self) {
+        let open = OPEN.fetch_sub(1, std::sync::atomic::Ordering::Relaxed) - 1;
+        if self.logging {
+            let secs = self.started.elapsed().as_secs_f64();
+            eprintln!(
+                "relay< #{} closed after {secs:.1}s, {:.1} MB at {:.1} Mbit/s ({open} open)",
+                self.id,
+                self.bytes as f64 / 1e6,
+                self.bytes as f64 * 8.0 / 1e6 / secs.max(0.001)
+            );
+        }
+    }
+}
+
+/// A provider response that counts what passes through it.
+struct Traced<R> {
+    inner: R,
+    trace: Trace,
+}
+
+impl<R: Read> Read for Traced<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.trace.bytes += n as u64;
+        Ok(n)
+    }
 }
 
 /// `p`: what's inside a film, as JSON. `m`: the film repacked into MP4 (`?t=` seconds to start
@@ -350,5 +407,25 @@ mod tests {
     fn leaves_tags_without_uris_alone() {
         let base = Url::parse("http://a/b.m3u8").unwrap();
         assert_eq!(rewrite_playlist("#EXT-X-VERSION:3\n#EXT-X-ENDLIST", &base, &relay), "#EXT-X-VERSION:3\n#EXT-X-ENDLIST\n");
+    }
+}
+
+#[cfg(test)]
+mod seek_check {
+    use super::*;
+    /// Manual check: seeking into an MKV through the relay. Needs a range server on :8801.
+    #[test]
+    #[ignore]
+    fn ffmpeg_seeks_through_the_relay() {
+        let relay = start("telly-test".into()).unwrap();
+        let url = Url::parse(&format!("http://127.0.0.1:8801/{}", std::env::var("FILM").unwrap_or("big.mkv".into()))).unwrap();
+        let input = wrap(&relay.base, "c", &url);
+        let ffmpeg = std::env::var("FFMPEG").unwrap();
+        let t = std::time::Instant::now();
+        let out = std::process::Command::new(ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-ss", "600", "-i", &input, "-map", "0:v:0", "-c", "copy", "-frames:v", "10", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "pipe:1"])
+            .output()
+            .unwrap();
+        eprintln!("SEEK took {:?} ok={} stderr={}", t.elapsed(), out.status.success(), String::from_utf8_lossy(&out.stderr));
     }
 }

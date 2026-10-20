@@ -260,8 +260,13 @@ pub fn start(args: &[String]) -> Result<Remux, String> {
         let _ = Command::new("/bin/kill").arg(pid.to_string()).status();
     }
     let logging = std::env::var_os("TELLY_RELAY_LOG").is_some();
+    let mut args = args.to_vec();
+    if logging {
+        // Progress every few seconds: "speed=" under 1x means the provider isn't keeping up.
+        args.splice(1..3, ["-loglevel".to_string(), "error".to_string(), "-stats".to_string(), "-stats_period".to_string(), "5".to_string()]);
+    }
     let mut child = Command::new(ffmpeg)
-        .args(args)
+        .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(if logging { Stdio::piped() } else { Stdio::null() })
@@ -272,7 +277,7 @@ pub fn start(args: &[String]) -> Result<Remux, String> {
         let input = args.iter().skip_while(|a| *a != "-i").nth(1).cloned().unwrap_or_default();
         std::thread::spawn(move || {
             use std::io::BufRead;
-            for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
+            for line in std::io::BufReader::new(stderr).split(b'\r').flat_map(|chunk| chunk.ok()).flat_map(|c| String::from_utf8_lossy(&c).lines().map(str::to_string).collect::<Vec<_>>()) {
                 eprintln!("ffmpeg: {}", line.replace(&input, "<film>"));
             }
         });
