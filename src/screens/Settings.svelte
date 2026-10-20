@@ -16,7 +16,7 @@
   let joining = $state(false);
   let joinCode = $state("");
   let relay = $state(DEFAULT_RELAY);
-  let showCode = $state(false);
+  let showCode = $state(true);
   let linking = $state(false);
   let syncError = $state<string | null>(null);
 
@@ -27,7 +27,7 @@
       await app.startSync(code, relay.trim());
       joining = false;
       joinCode = "";
-      showCode = code === undefined;
+      showCode = true;
     } catch (e) {
       syncError = (e as Error).message;
       if (!app.syncStatus.at) await app.stopSync();
