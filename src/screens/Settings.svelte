@@ -101,9 +101,13 @@
       {#if app.update.latest}
         <div class="notice" style="margin-bottom:8px">telly {app.update.latest.version} is available.{#if app.update.latest.notes}<br /><small>{app.update.latest.notes.split("\n")[0]}</small>{/if}</div>
       {/if}
-      <div class="line"><div><span role="presentation" onclick={clickVersion}>telly {app.update.current}</span>{#if unlockNote} <span class="hint">· {unlockNote}</span>{/if}<small>Checks GitHub once a week · last checked {ago(app.meta.updateCheckedAt)}{app.update.error ? ` · ${app.update.error}` : ""}</small></div>
+      <div class="line"><div><span role="presentation" onclick={clickVersion}>telly {app.update.current}</span>{#if unlockNote} <span class="hint">· {unlockNote}</span>{/if}<small>Checks GitHub once a week · last checked {ago(app.meta.updateCheckedAt)}{app.update.upToDate ? " · You're up to date" : ""}{app.update.error ? ` · ${app.update.error}` : ""}</small></div>
         <div class="btns">
-          {#if app.update.latest}<button class="btn small primary" onclick={() => openExternal(app.update.latest!.page)}>Download {app.update.latest.version}</button>{/if}
+          {#if app.update.latest}
+            <button class="btn small primary" disabled={app.update.installing !== undefined} onclick={() => app.installUpdate()}>
+              {app.update.installing !== undefined ? `Installing… ${Math.round(app.update.installing * 100)}%` : `Install ${app.update.latest.version} and restart`}</button>
+            <button class="btn small" onclick={() => openExternal(app.update.latest!.page)}>Download</button>
+          {/if}
           <button class="btn small" disabled={app.update.checking} onclick={() => app.checkForUpdate(true)}>{app.update.checking ? "Checking…" : "Check now"}</button>
           <button class="btn small" onclick={() => openExternal(RELEASES_PAGE)}>Releases</button>
         </div></div>

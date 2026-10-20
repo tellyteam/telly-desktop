@@ -41,6 +41,9 @@ jobs:
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update archive, so the app only installs updates built here.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: telly ${{ github.ref_name }}
@@ -48,4 +51,6 @@ jobs:
             Download the `.dmg`, open it and drag telly to Applications. The first time, right-click telly and choose **Open** (it isn't signed by Apple yet).
           releaseDraft: false
           prerelease: false
+          # latest.json: what the in-app updater reads.
+          includeUpdaterJson: true
           args: --target universal-apple-darwin

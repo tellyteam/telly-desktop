@@ -21,7 +21,10 @@
         "backgroundColor": "#151a22",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 18, "y": 22 }
+        "trafficLightPosition": {
+          "x": 18,
+          "y": 22
+        }
       }
     ],
     "security": {
@@ -38,13 +41,34 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "category": "Entertainment",
     "shortDescription": "A small, fast IPTV player",
     "longDescription": "telly is a small, fast IPTV player. Bring your own provider (Xtream Codes or an M3U playlist).",
     "copyright": "telly contributors, GPL-3.0",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
-    "macOS": { "minimumSystemVersion": "11.0" },
-    "externalBin": ["binaries/ffmpeg"]
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "externalBin": [
+      "binaries/ffmpeg"
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4MTE0MjYzMDBCNDFCOUQKUldTZEc3UUFZMElSK0ZIYi9NS0RxLzYvNEtZcS93TWtlSHNKQ1lLNVlSWWdqWHZWdlNZelhZUDIK",
+      "endpoints": [
+        "https://github.com/tellyteam/telly-desktop/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

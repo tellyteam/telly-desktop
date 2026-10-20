@@ -83,7 +83,7 @@ class App {
   private back: Route[] = [];
   player = $state<PlayRequest | null>(null);
 
-  update = $state<{ checking: boolean; latest?: Release; error?: string; current: string }>({ checking: false, current: "" });
+  update = $state<{ checking: boolean; latest?: Release; error?: string; current: string; upToDate?: boolean; installing?: number }>({ checking: false, current: "" });
 
   private liveById = new Map<string, Channel>();
   private filmById = new Map<string, Channel>();
@@ -485,16 +485,49 @@ class App {
 
   // ---- Updates ----
 
+  /**
+   * Downloads the new version, checks its signature against the key built into telly, replaces
+   * the app and restarts. Outside the app (development) it opens the release page instead.
+   */
+  async installUpdate() {
+    const latest = this.update.latest;
+    if (!latest) return;
+    if (!backend.inApp) return backend.openExternal(latest.page);
+    this.update.error = undefined;
+    this.update.installing = 0;
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (!update) {
+        this.update.installing = undefined;
+        return backend.openExternal(latest.page);
+      }
+      let total = 0, done = 0;
+      await update.downloadAndInstall((e) => {
+        if (e.event === "Started") total = e.data.contentLength ?? 0;
+        else if (e.event === "Progress") { done += e.data.chunkLength; this.update.installing = total ? done / total : 0; }
+      });
+      backend.flushWrites();
+      const { relaunch } = await import("@tauri-apps/plugin-process");
+      await relaunch();
+    } catch (e) {
+      console.warn("Update failed", e);
+      this.update.installing = undefined;
+      this.update.error = "The update didn't install. Use Download to get it from GitHub instead.";
+    }
+  }
+
   async checkForUpdate(manual: boolean) {
     this.update.checking = true;
     this.update.error = undefined;
     try {
       const r = await latestRelease();
       this.update.latest = r && isNewer(r.version, this.update.current) ? r : undefined;
+      this.update.upToDate = manual && !this.update.latest;
       this.meta.updateCheckedAt = Date.now();
       backend.storeWrite("meta", this.meta);
     } catch (e) {
-      if (manual) this.update.error = "Couldn't reach GitHub. Try again later.";
+      if (manual) this.update.error = "Couldn't check GitHub for updates. Try again later.";
       console.warn("Update check failed", e);
     } finally {
       this.update.checking = false;
