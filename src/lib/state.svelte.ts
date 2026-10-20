@@ -47,7 +47,7 @@ export interface SyncConfig {
 }
 
 /** The relay telly uses unless you run your own (see telly-sync). */
-export const DEFAULT_RELAY = "";
+export const DEFAULT_RELAY = "https://telly-sync.tellyteam.workers.dev";
 
 /** Never more often than this when the window regains focus. */
 const SYNC_GAP_MS = 60_000;
