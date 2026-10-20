@@ -3,6 +3,8 @@
   import { inApp, openExternal, vlcAvailable } from "../lib/backend";
   import { ago, app, DEFAULT_RELAY } from "../lib/state.svelte";
   import { formatCode } from "../lib/sync/crypto";
+  import { syncLink } from "../lib/sync/link";
+  import QrCode from "../components/QrCode.svelte";
   import { RELEASES_PAGE } from "../lib/updates";
 
   let vlc = $state(false);
@@ -76,8 +78,11 @@
         <div class="line"><div>Keeping your place in sync<small>{app.syncStatus.busy ? "Syncing now…" : `Last synced ${ago(app.syncStatus.at)}`}{app.syncStatus.error ? ` · ${app.syncStatus.error}` : ""}</small></div>
           <div class="btns"><button class="btn small" disabled={app.syncStatus.busy} onclick={() => app.syncNow()}>Sync now</button>
             <button class="btn small" onclick={() => app.stopSync()}>Stop syncing on this Mac</button></div></div>
-        <div class="line"><div>Link another device<small>Enter this code in Settings → Sync on your Fire TV, LG TV or iPad. Keep it private: anyone with it can see what you've watched.</small></div>
-          {#if showCode}<code class="sync-code">{formatCode(app.sync.code)}</code>{:else}<button class="btn small" onclick={() => (showCode = true)}>Show code</button>{/if}</div>
+        <div class="line"><div>Link another device<small>Scan the QR code with your iPad's camera, or enter the code in Settings → Sync on your Fire TV or iPad. Keep it private: anyone with it can see what you've watched.</small></div>
+          <button class="btn small" onclick={() => (showCode = !showCode)}>{showCode ? "Hide code" : "Show code"}</button></div>
+        {#if showCode}
+          <div class="line sync-link"><QrCode text={syncLink(app.sync.code, app.sync.relay, DEFAULT_RELAY)} /><code class="sync-code">{formatCode(app.sync.code)}</code></div>
+        {/if}
       {:else}
         <div class="line"><div>Pick up where you left off on your other devices<small>Shares progress, Continue watching and My List, end-to-end encrypted. Your provider login is never shared; sign in on each device.</small></div>
           <div class="btns"><button class="btn small primary" disabled={linking || !relay.trim()} onclick={() => link()}>Start syncing</button>

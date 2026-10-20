@@ -156,3 +156,17 @@ describe("relay round trip", () => {
     expect(Buffer.from(stored.get("aaaaaaaaaaaaaaaa")!).toString("latin1")).not.toContain("film");
   });
 });
+
+describe("link", () => {
+  it("carries the code, and the relay only when it isn't telly's", async () => {
+    const { syncLink, parseSyncLink } = await import("./link");
+    const def = "https://telly-sync.tellyteam.workers.dev";
+    expect(syncLink("ABCDEFGHJKMNPQRS", def, def)).toBe("telly://sync?code=ABCDEFGHJKMNPQRS");
+    const own = syncLink("ABCDEFGHJKMNPQRS", "https://relay.example/", def);
+    expect(own).toBe("telly://sync?code=ABCDEFGHJKMNPQRS&relay=https%3A%2F%2Frelay.example%2F");
+    expect(parseSyncLink(own, def)).toEqual({ code: "ABCDEFGHJKMNPQRS", relay: "https://relay.example/" });
+    expect(parseSyncLink("telly://sync?code=abcd-efgh-jkmn-pqrs", def)).toEqual({ code: "ABCDEFGHJKMNPQRS", relay: def });
+    expect(parseSyncLink("https://evil.example/?code=ABCDEFGHJKMNPQRS", def)).toBeNull();
+    expect(parseSyncLink("telly://sync?code=ABCDEFGHJKMNPQRS&relay=http%3A%2F%2Fplain", def)).toBeNull();
+  });
+});
