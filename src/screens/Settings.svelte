@@ -34,6 +34,19 @@
     }
   }
 
+  // Seven clicks on the version in a row show (or hide) the Sync section.
+  let versionClicks = 0;
+  let versionTimer: ReturnType<typeof setTimeout> | undefined;
+  let unlockNote = $state<string | null>(null);
+  function clickVersion() {
+    clearTimeout(versionTimer);
+    versionTimer = setTimeout(() => (versionClicks = 0), 3000);
+    if (++versionClicks < 7) return;
+    versionClicks = 0;
+    unlockNote = app.toggleSyncUnlocked() ? "Sync is now in Settings." : "Sync hidden.";
+    setTimeout(() => (unlockNote = null), 3000);
+  }
+
   const p = $derived(app.provider!);
   const toggle = (key: "autoNext" | "offerVlc") => { app.settings[key] = !app.settings[key]; app.saveSettings(); };
 </script>
@@ -57,6 +70,7 @@
         <button class="switch" class:on={app.settings.offerVlc} aria-label="Offer VLC" onclick={() => toggle("offerVlc")}></button></div>
       <div class="line"><div>Keyboard<small>Space pause · ← → 10 seconds · ↑ ↓ volume · F full screen · N next episode · M mute · Esc back</small></div></div>
     </div>
+    {#if app.syncShown}
     <div class="panel"><h4>Sync</h4>
       {#if app.sync}
         <div class="line"><div>Keeping your place in sync<small>{app.syncStatus.busy ? "Syncing now…" : `Last synced ${ago(app.syncStatus.at)}`}{app.syncStatus.error ? ` · ${app.syncStatus.error}` : ""}</small></div>
@@ -77,11 +91,12 @@
         {#if syncError}<div class="notice">{syncError}</div>{/if}
       {/if}
     </div>
+    {/if}
     <div class="panel"><h4>Updates</h4>
       {#if app.update.latest}
         <div class="notice" style="margin-bottom:8px">telly {app.update.latest.version} is available.{#if app.update.latest.notes}<br /><small>{app.update.latest.notes.split("\n")[0]}</small>{/if}</div>
       {/if}
-      <div class="line"><div>telly {app.update.current}<small>Checks GitHub once a week · last checked {ago(app.meta.updateCheckedAt)}{app.update.error ? ` · ${app.update.error}` : ""}</small></div>
+      <div class="line"><div><span role="presentation" onclick={clickVersion}>telly {app.update.current}</span>{#if unlockNote} <span class="hint">· {unlockNote}</span>{/if}<small>Checks GitHub once a week · last checked {ago(app.meta.updateCheckedAt)}{app.update.error ? ` · ${app.update.error}` : ""}</small></div>
         <div class="btns">
           {#if app.update.latest}<button class="btn small primary" onclick={() => openExternal(app.update.latest!.page)}>Download {app.update.latest.version}</button>{/if}
           <button class="btn small" disabled={app.update.checking} onclick={() => app.checkForUpdate(true)}>{app.update.checking ? "Checking…" : "Check now"}</button>
@@ -97,6 +112,6 @@
         {#if confirmClearProgress}<div class="btns"><button class="btn small" onclick={() => { app.clearProgress(); confirmClearProgress = false; }}>Clear it all</button><button class="btn small" onclick={() => (confirmClearProgress = false)}>Cancel</button></div>
         {:else}<button class="btn small" onclick={() => (confirmClearProgress = true)}>Clear</button>{/if}</div>
     </div>
-    <p class="hint">telly is free software (GPL-3.0). It talks only to your provider, to GitHub once a week to check for updates and, if you turn on sync, to the sync relay. No accounts, analytics or tracking.</p>
+    <p class="hint">telly is free software (GPL-3.0). It talks only to your provider and to GitHub once a week to check for updates{app.syncShown ? ", and to the sync relay if you turn on sync" : ""}. No accounts, analytics or tracking.</p>
   </div>
 </div>

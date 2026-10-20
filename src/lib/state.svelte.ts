@@ -37,6 +37,8 @@ export interface Settings {
 interface Meta {
   updatedAt?: number;
   updateCheckedAt?: number;
+  /** Sync is hidden until unlocked (seven clicks on the version in Settings). */
+  syncUnlocked?: boolean;
 }
 
 /** Kept in the Keychain: the link code is the household's only secret. */
@@ -363,6 +365,18 @@ class App {
   }
 
   // ---- Sync ----
+
+  /** Sync is a hidden feature for now: Settings shows it once unlocked, or while this Mac is linked. */
+  get syncShown() {
+    return !!this.meta.syncUnlocked || !!this.sync;
+  }
+
+  /** Shows or hides Settings → Sync; returns whether it's now shown. Hiding never unlinks. */
+  toggleSyncUnlocked(): boolean {
+    this.meta.syncUnlocked = !this.syncShown || !!this.sync;
+    backend.storeWrite("meta", this.meta, 0);
+    return this.syncShown;
+  }
 
   /** Starts a new household with a fresh code, or joins one with [code]. */
   async startSync(code?: string, relay = DEFAULT_RELAY) {
