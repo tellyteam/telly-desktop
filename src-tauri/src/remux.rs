@@ -163,8 +163,11 @@ pub fn remux_args(probe: &Probe, input: &str, start_secs: f64, audio: Option<usi
     }
     // Subtitles stay out: the player is fed through Media Source Extensions, which take only
     // audio and video. (Text subtitles could follow later as a separate WebVTT track.)
+    // A fragment every second at most, not only at keyframes (often 10 s apart): the player can
+    // only use a fragment once all of it has arrived, and providers send films barely faster than
+    // they play, so long fragments mean a slow start after a skip and freezes whenever they dip.
     a.extend(
-        ["-sn", "-dn", "-map_chapters", "-1", "-avoid_negative_ts", "make_zero", "-f", "mp4", "-movflags", "frag_keyframe+delay_moov+default_base_moof", "pipe:1"]
+        ["-sn", "-dn", "-map_chapters", "-1", "-avoid_negative_ts", "make_zero", "-f", "mp4", "-movflags", "frag_keyframe+delay_moov+default_base_moof", "-frag_duration", "1000000", "pipe:1"]
             .map(String::from),
     );
     a
@@ -338,6 +341,7 @@ At least one output file must be specified"#;
         assert!(args.contains("-map 0:1 -c:a copy"), "{args}");
         // Subtitles and cover art stay out of the stream.
         assert!(args.contains("-sn -dn"), "{args}");
+        assert!(args.contains("-frag_duration 1000000 pipe:1"), "{args}");
         assert!(!args.contains("0:3") && !args.contains("0:4") && !args.contains("0:5"), "{args}");
         assert!(!args.contains("-ss"));
 

@@ -8,7 +8,8 @@
 //!
 //! URLs look like `http://127.0.0.1:{port}/{token}/{flags}/{base64url(target)}/{name}`:
 //! - `token` is random per launch, so other software on the machine can't use the relay.
-//! - `flags`: `c` allows plain HTTP (the provider setting), `h` rewrites HLS playlists. `-` is none.
+//! - `flags`: `c` allows plain HTTP (the provider setting), `h` rewrites HLS playlists, `f` marks
+//!   FFmpeg reading a film (see [FILM_READ]). `-` is none.
 //! - `name` is the target's file name, only there to make URLs readable; it's ignored.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -33,6 +34,10 @@ struct Clients {
     /// Follows redirects to plain HTTP only when the provider setting allows it.
     strict: reqwest::blocking::Client,
     lenient: reqwest::blocking::Client,
+    /// For FFmpeg reading films: a new connection each time, none kept idle. Providers often
+    /// allow one connection per account (an idle one counts), and close idle ones themselves.
+    film_strict: reqwest::blocking::Client,
+    film_lenient: reqwest::blocking::Client,
 }
 
 pub fn start(user_agent: String) -> std::io::Result<Relay> {
@@ -42,8 +47,10 @@ pub fn start(user_agent: String) -> std::io::Result<Relay> {
     let base = format!("http://127.0.0.1:{port}/{token}");
 
     let clients = Arc::new(Clients {
-        strict: client(&user_agent, false),
-        lenient: client(&user_agent, true),
+        strict: client(&user_agent, false, true),
+        lenient: client(&user_agent, true, true),
+        film_strict: client(&user_agent, false, false),
+        film_lenient: client(&user_agent, true, false),
     });
     let server = Arc::new(server);
     let prefix = format!("/{token}/");
@@ -60,7 +67,7 @@ pub fn start(user_agent: String) -> std::io::Result<Relay> {
     Ok(Relay { base })
 }
 
-fn client(user_agent: &str, allow_cleartext: bool) -> reqwest::blocking::Client {
+fn client(user_agent: &str, allow_cleartext: bool, pooled: bool) -> reqwest::blocking::Client {
     let policy = reqwest::redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= 10 {
             attempt.error("too many redirects")
@@ -73,6 +80,7 @@ fn client(user_agent: &str, allow_cleartext: bool) -> reqwest::blocking::Client 
     reqwest::blocking::Client::builder()
         .user_agent(user_agent)
         .redirect(policy)
+        .pool_max_idle_per_host(if pooled { usize::MAX } else { 0 })
         .connect_timeout(Duration::from_secs(15))
         // No overall timeout: a live stream is one long response.
         .timeout(None)
@@ -207,20 +215,34 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
         return film(request, base, flags, &target, &path);
     }
 
-    let client = if target.allow_cleartext { &clients.lenient } else { &clients.strict };
+    let client = match (flags.contains('f'), target.allow_cleartext) {
+        (false, false) => &clients.strict,
+        (false, true) => &clients.lenient,
+        (true, false) => &clients.film_strict,
+        (true, true) => &clients.film_lenient,
+    };
     let range = request.headers().iter().find(|h| h.field.equiv("Range")).map(|h| h.value.as_str().to_string());
     let trace = Trace::begin(range.as_deref());
+    // FFmpeg reading a film: a newer read (a skip, another film) replaces this one.
+    let film_read = flags.contains('f').then(|| FILM_READ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
     let send = |range: Option<&str>| {
-        let mut upstream = client.get(target.url.clone());
-        if let Some(r) = range {
-            upstream = upstream.header("Range", r);
-        }
-        upstream.send()
+        let attempt = || {
+            let mut upstream = client.get(target.url.clone());
+            if let Some(r) = range {
+                upstream = upstream.header("Range", r);
+            }
+            upstream.send()
+        };
+        // A kept-alive connection the provider has since closed fails at once: try again on a new one.
+        attempt().or_else(|e| if e.is_redirect() || e.is_connect() || e.is_timeout() { Err(e) } else { attempt() })
     };
     let response = match send(range.as_deref()) {
         Ok(r) => r,
         // Never echo the URL: Xtream URLs carry the login.
         Err(e) => {
+            if std::env::var_os("TELLY_RELAY_LOG").is_some() {
+                eprintln!("relay! #{} failed: {:?}", trace.id, std::error::Error::source(&e).map(|s| s.to_string()));
+            }
             let host = target.url.host_str().unwrap_or("the provider").to_string();
             let reason = if e.is_redirect() { "redirected to plain HTTP, which is turned off" } else if e.is_connect() { "couldn't connect" } else { "didn't answer" };
             return error(request, 502, &format!("{host} {reason}"));
@@ -274,7 +296,7 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
         }
     }
     let length = response.content_length().map(|l| l as usize);
-    let _ = request.respond(Response::new(StatusCode(status), headers, Traced { inner: response, trace }, length, None));
+    let _ = request.respond(Response::new(StatusCode(status), headers, Traced { inner: response, trace, film_read }, length, None));
 }
 
 /// Troubleshooting (TELLY_RELAY_LOG): when each provider request starts, is answered and ends,
@@ -317,14 +339,24 @@ impl Drop for Trace {
     }
 }
 
-/// A provider response that counts what passes through it.
+/// The latest film read by FFmpeg. Providers often allow one connection per account, and FFmpeg
+/// opens its next read before closing the last (and a stopped FFmpeg can take a moment to go), so
+/// an older read could block the new one: older reads end as soon as a newer one starts.
+static FILM_READ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A provider response that counts what passes through it, and ends early if it's a film read
+/// that a newer one has replaced.
 struct Traced<R> {
     inner: R,
     trace: Trace,
+    film_read: Option<usize>,
 }
 
 impl<R: Read> Read for Traced<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.film_read.is_some_and(|n| n != FILM_READ.load(std::sync::atomic::Ordering::SeqCst)) {
+            return Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "replaced by a newer film read"));
+        }
         let n = self.inner.read(buf)?;
         self.trace.bytes += n as u64;
         Ok(n)
@@ -334,7 +366,7 @@ impl<R: Read> Read for Traced<R> {
 /// `p`: what's inside a film, as JSON. `m`: the film repacked into MP4 (`?t=` seconds to start
 /// at, `?a=` audio track). FFmpeg reads the film back through this relay.
 fn film(request: Request, base: &str, flags: &str, target: &Target, path: &str) {
-    let input = wrap(base, if target.allow_cleartext { "c" } else { "-" }, &target.url);
+    let input = wrap(base, if target.allow_cleartext { "cf" } else { "f" }, &target.url);
     let probe = match remux::probe(target.url.as_str(), &input) {
         Ok(p) => p,
         Err(e) => return error(request, 502, &e),
@@ -413,19 +445,32 @@ mod tests {
 #[cfg(test)]
 mod seek_check {
     use super::*;
-    /// Manual check: seeking into an MKV through the relay. Needs a range server on :8801.
+    /// Manual check: FFmpeg skipping into the middle of an MKV through the relay, as telly does.
+    /// FILM_URL is a range server (try one that allows a single connection, like many providers);
+    /// FFMPEG is the bundled FFmpeg.
     #[test]
     #[ignore]
     fn ffmpeg_seeks_through_the_relay() {
         let relay = start("telly-test".into()).unwrap();
-        let url = Url::parse(&format!("http://127.0.0.1:8801/{}", std::env::var("FILM").unwrap_or("big.mkv".into()))).unwrap();
-        let input = wrap(&relay.base, "c", &url);
-        let ffmpeg = std::env::var("FFMPEG").unwrap();
+        let url = Url::parse(&std::env::var("FILM_URL").unwrap_or("http://127.0.0.1:8801/big.mkv".into())).unwrap();
+        let input = wrap(&relay.base, "cf", &url);
         let t = std::time::Instant::now();
-        let out = std::process::Command::new(ffmpeg)
+        let mut child = std::process::Command::new(std::env::var("FFMPEG").unwrap())
             .args(["-hide_banner", "-loglevel", "error", "-ss", "600", "-i", &input, "-map", "0:v:0", "-c", "copy", "-frames:v", "10", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "pipe:1"])
-            .output()
+            .stdout(std::process::Stdio::null())
+            .spawn()
             .unwrap();
-        eprintln!("SEEK took {:?} ok={} stderr={}", t.elapsed(), out.status.success(), String::from_utf8_lossy(&out.stderr));
+        let finished = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status.success();
+            }
+            if t.elapsed() > Duration::from_secs(40) {
+                let _ = child.kill();
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        eprintln!("SEEK finished={finished} in {:?}", t.elapsed());
+        assert!(finished, "FFmpeg didn't get to the middle of the film within 40 s");
     }
 }
