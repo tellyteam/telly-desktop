@@ -86,8 +86,10 @@ export async function attach(video: HTMLVideoElement, url: string, opts: AttachO
 
   if (opts.remux) return attachRemux(video, src, opts.remux.probe, opts.remux.audio, opts, fail);
 
-  // LG TVs play HLS, MPEG-TS, MKV and the rest in their own media pipeline, with hardware decoding.
-  if (isWebOS) return attachNative(video, src, opts, fail);
+  // LG TVs play HLS, MPEG-TS, MKV and the rest in their own media pipeline, with hardware decoding;
+  // where the TV says it can't (the Simulator, some older models), the players below take over.
+  const nativeType = engine === "hls" ? "application/vnd.apple.mpegurl" : engine === "mpegts" ? "video/mp2t" : "";
+  if (isWebOS && (!nativeType || video.canPlayType(nativeType))) return attachNative(video, src, opts, fail);
 
   if (engine === "hls" && !(isWebKit && video.canPlayType("application/vnd.apple.mpegurl"))) {
     const { default: HlsJs } = await import("hls.js");

@@ -185,7 +185,8 @@ export async function isFullscreen(): Promise<boolean> {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     return getCurrentWindow().isFullscreen();
   }
-  return isWebOS || !!document.fullscreenElement;
+  // A TV is always full screen, so there's never a full screen to leave: Back closes the player.
+  return !isWebOS && !!document.fullscreenElement;
 }
 
 export async function appVersion(): Promise<string> {

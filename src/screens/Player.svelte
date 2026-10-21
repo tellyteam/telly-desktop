@@ -106,7 +106,8 @@
       const seek = () => { video.currentTime = resumeAt / 1000; };
       if (video.readyState >= 1) seek(); else video.addEventListener("loadedmetadata", seek, { once: true });
     }
-    video.play().catch(() => {});
+    // hls.js can reset the source while it starts, which cancels this play: try again once it's ready.
+    video.play().catch(() => video.addEventListener("canplay", () => { if (id === loadId) video.play().catch(() => {}); }, { once: true }));
     clearTimeout(watchdog);
     watchdog = setTimeout(() => {
       if (id === loadId && !error && video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -538,7 +539,7 @@
         <button class="ic" data-tip="Aspect ratio (A)" aria-label="Aspect ratio (A)" onclick={() => (menu = menu === "aspect" ? null : "aspect")}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" /></svg></button>
         {#if vlc}<button class="ic" data-tip="Open in VLC" aria-label="Open in VLC" onclick={playInVlc}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 9H9zM8 13h8l1.5 4h-11zM4 19h16v3H4z" /></svg></button>{/if}
         {#if !isWebOS}<button class="ic" data-tip="Picture in picture (P)" aria-label="Picture in picture (P)" onclick={togglePip}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 11h-8v6h8v-6zm4 8V5c0-1.1-.9-2-2-2H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 0H3V5h18v14z" /></svg></button>{/if}
-        <button class="ic" data-tip="Full screen (F)" aria-label="Full screen (F)" onclick={toggleFullscreen}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg></button>
+        {#if !isWebOS}<button class="ic" data-tip="Full screen (F)" aria-label="Full screen (F)" onclick={toggleFullscreen}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg></button>{/if}
       </div>
     </div>
   </div>

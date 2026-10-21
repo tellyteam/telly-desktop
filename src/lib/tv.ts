@@ -71,7 +71,7 @@ export function focusFirst(root: ParentNode = document) {
   if (active && active !== document.body && visible(active) && document.contains(active)) return;
   const main = (root as Document).querySelector?.("main") ?? root;
   // A page's main action first (Play on a film), then the first thing in it.
-  const primary = [...main.querySelectorAll<HTMLElement>(".btn.primary")].find(visible);
+  const primary = [...main.querySelectorAll<HTMLElement>("[data-autofocus], .btn.primary:not([disabled])")].find(visible);
   const first = primary ?? focusables(main)[0] ?? focusables(root)[0];
   if (first) first.focus({ preventScroll: true });
 }
@@ -108,8 +108,11 @@ export function startTv(suspendedBase: () => boolean) {
       return;
     }
     const target = e.target as HTMLElement;
-    // In a text field, Left and Right move the cursor; Up and Down leave it.
-    if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && (dir === "ArrowLeft" || dir === "ArrowRight")) return;
+    // In a text field, Left and Right move the cursor until it reaches the end; then they leave it.
+    if ((target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) && (dir === "ArrowLeft" || dir === "ArrowRight")) {
+      const atEdge = dir === "ArrowRight" ? target.selectionEnd === target.value.length : target.selectionStart === 0;
+      if (!atEdge) return;
+    }
     if (target instanceof HTMLSelectElement) return;
     const active = document.activeElement as HTMLElement | null;
     const from = active && active !== document.body ? active.getBoundingClientRect() : new DOMRect(0, 0, 0, 0);
@@ -119,8 +122,18 @@ export function startTv(suspendedBase: () => boolean) {
     if (next) focus(next);
   }, true);
 
+  // The TV's on-screen keyboard covers the bottom half: keep the field being typed in above it.
+  window.addEventListener("focusin", (e) => {
+    const t = e.target as HTMLElement;
+    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) {
+      setTimeout(() => t.scrollIntoView({ block: "start", behavior: "smooth" }), 50);
+    }
+  });
+
   // A new screen (or its contents) appeared: make sure something has focus.
   new MutationObserver(() => {
-    if (!suspended()) requestAnimationFrame(() => focusFirst());
+    if (!suspended()) setTimeout(() => focusFirst());
   }).observe(document.body, { childList: true, subtree: true });
+  // …and for the first screen, which may already be there.
+  setTimeout(() => focusFirst());
 }

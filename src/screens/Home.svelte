@@ -58,7 +58,7 @@
       </div>
     </section>
   {:else}
-    <div class="page-head" style="padding-top:8px"><h2>Welcome to telly</h2><span class="sub">Pick something from Live TV, Series or Films, and it'll show up here next time.</span></div>
+    <div class="page-head" style="padding-top:8px"><h2>Welcome to telly</h2><span class="sub">Pick something from {app.provider?.kind === "m3u" ? "Live TV" : "Live TV, Series or Films"}, and it'll show up here next time.</span></div>
   {/if}
 
   {#if app.history.length}

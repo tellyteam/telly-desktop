@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, tick } from "svelte";
   import Art from "../components/Art.svelte";
+  import { isWebOS } from "../lib/backend";
   import { playChannel } from "../lib/actions";
   import * as G from "../lib/guide";
   import type { Channel } from "../lib/model";
@@ -208,7 +209,7 @@
         {/each}
       </div>
     {:else}
-      <div class="empty" style="padding:30px 0">Click a channel to preview it. Double-click, or press Enter, to watch full screen. ↑ ↓ move through the list.</div>
+      <div class="empty" style="padding:30px 0">{isWebOS ? "Press OK on a channel to watch it. ▲ ▼ move through the list; CH + / − change channel while watching." : "Click a channel to preview it. Double-click, or press Enter, to watch full screen. ↑ ↓ move through the list."}</div>
     {/if}
   </div>
 </div>

@@ -80,7 +80,7 @@
     <div class="panel"><h4>Sync</h4>
       {#if app.sync}
         <div class="line"><div>Keeping your place in sync<small>{app.syncStatus.busy ? "Syncing now…" : `Last synced ${ago(app.syncStatus.at)}`}{app.syncStatus.error ? ` · ${app.syncStatus.error}` : ""}</small></div>
-          <div class="btns"><button class="btn small" disabled={app.syncStatus.busy} onclick={() => app.syncNow()}>Sync now</button>
+          <div class="btns"><button class="btn small" data-autofocus disabled={app.syncStatus.busy} onclick={() => app.syncNow()}>Sync now</button>
             <button class="btn small" onclick={() => app.stopSync()}>Stop syncing on this {isWebOS ? "TV" : "Mac"}</button></div></div>
         <div class="line"><div>Link another device<small>Scan the QR code with your iPad's camera, or enter the code in Settings → Sync on your Fire TV or iPad. Keep it private: anyone with it can see what you've watched.</small></div>
           <button class="btn small" onclick={() => (showCode = !showCode)}>{showCode ? "Hide code" : "Show code"}</button></div>
@@ -105,7 +105,8 @@
       {#if app.update.latest}
         <div class="notice" style="margin-bottom:8px">telly {app.update.latest.version} is available.{#if app.update.latest.notes}<br /><small>{app.update.latest.notes.split("\n")[0]}</small>{/if}</div>
       {/if}
-      <div class="line"><div><span role="button" tabindex={isWebOS ? 0 : -1} onclick={clickVersion} onkeydown={() => {}}>telly {app.update.current}</span>{#if unlockNote} <span class="hint">· {unlockNote}</span>{/if}<small>{isWebOS ? "Installed from your computer in Developer Mode" : `Checks GitHub once a week · last checked ${ago(app.meta.updateCheckedAt)}`}{app.update.upToDate ? " · You're up to date" : ""}{app.update.error ? ` · ${app.update.error}` : ""}</small></div>
+      <!-- On a TV the whole row is the remote's target (seven presses of OK show Sync). -->
+      <div class="line" role={isWebOS ? "button" : undefined} tabindex={isWebOS ? 0 : -1} onclick={isWebOS ? clickVersion : undefined} onkeydown={() => {}}><div><span role="presentation" onclick={isWebOS ? undefined : clickVersion}>telly {app.update.current}</span>{#if unlockNote} <span class="hint">· {unlockNote}</span>{/if}<small>{isWebOS ? "Installed from your computer in Developer Mode" : `Checks GitHub once a week · last checked ${ago(app.meta.updateCheckedAt)}`}{app.update.upToDate ? " · You're up to date" : ""}{app.update.error ? ` · ${app.update.error}` : ""}</small></div>
         {#if !isWebOS}
         <div class="btns">
           {#if app.update.latest}
