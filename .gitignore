@@ -1,12 +1,6 @@
 node_modules/
-dist/
-src-tauri/target/
-src-tauri/gen/
+dist-webos/
+build-webos/
 # A developer's own provider, for pre-filling setup in `npm run dev` only. Never committed.
 provider.local.properties
 .DS_Store
-# FFmpeg is built by scripts/build-ffmpeg.sh, not committed
-.ffmpeg-build/
-src-tauri/binaries/
-dist-webos/
-build-webos/

@@ -1,86 +1,92 @@
-# telly for Mac
+# telly for LG TVs
 
-A small, fast IPTV player for your Mac: the desktop sibling of
-[telly for Fire TV and Android TV](https://github.com/tellyteam/telly). Bring your own provider
-(Xtream Codes or an M3U playlist); telly gives you a clean way to watch it.
+A small, fast IPTV player for LG smart TVs (webOS 6 and later), driven entirely by the remote.
+Bring your own provider (Xtream Codes or an M3U playlist); telly gives you a clean way to watch it.
 
 - **Home** with Pick up where you left off, Continue watching, My List and recently added titles
-- **Live TV** with categories, a live preview and the programme guide (now and next)
-- **Series and films** in rows, detail pages, seasons and episodes, and full-window grids
+- **Live TV** with categories, a live preview and the programme guide (now and next); CH+ and CH−
+  change channel while you watch
+- **Series and films** in rows, detail pages, seasons and episodes
 - **Picks up where you left off**, including the next episode once the credits roll
-- **Search everything** from anywhere with <kbd>⌘K</kbd>
 - **My List** for films, series and channels
 - **Aspect ratio** per channel or title, including a custom size
-- **Keyboard first**: <kbd>Space</kbd> pause, <kbd>←</kbd> <kbd>→</kbd> 10 seconds, <kbd>F</kbd> full screen,
-  <kbd>N</kbd> next episode, <kbd>P</kbd> picture in picture, <kbd>Esc</kbd> back
-- Small, using the Mac's own web engine rather than a bundled browser
+- Plays with the TV's own media player and hardware decoding (HLS, MPEG-TS, MKV, MP4)
 
 telly contains no channels or content. You need your own subscription from an IPTV provider.
 
+telly is also on [Android TV and Fire TV](https://github.com/tellyteam/telly-android) and
+[iPad and Mac](https://github.com/tellyteam/telly-apple).
+
 ## Install
 
-Download the latest `.dmg` from [Releases](https://github.com/tellyteam/telly-desktop/releases/latest)
-(Apple silicon and Intel, macOS 11 or later), open it and drag telly to Applications. telly isn't
-signed by Apple yet, so the first time, **right-click telly → Open → Open**.
+telly isn't in LG's Content Store, so it's installed from a computer with the TV in Developer Mode.
 
-**Updating:** telly checks GitHub once a week and shows an update in **Settings → Updates** (you can
-check there any time). Download it and install over the top; everything you've set up is kept.
+1. On the TV, install **Developer Mode** from the LG Content Store and sign in with a (free)
+   [LG developer account](https://webostv.developer.lge.com). Turn on **Dev Mode Status** (the TV
+   restarts), then **Key Server**. Note the TV's IP address and the passphrase it shows.
+2. On your computer (with [Node](https://nodejs.org)), install LG's tools and add the TV:
+   ```bash
+   npm install -g @webos-tools/cli
+   ares-setup-device --add tv --info "{'host':'TV_IP_ADDRESS','port':'9922','username':'prisoner'}"
+   ares-novacom --device tv --getkey       # asks for the passphrase the TV shows
+   ```
+3. Download the latest `.ipk` from [Releases](https://github.com/tellyteam/telly-lg/releases/latest) and install it:
+   ```bash
+   ares-install --device tv io.github.tellyteam.telly_*.ipk
+   ```
+
+telly then appears with your other apps. Developer Mode lasts 50 hours at a time: open the
+Developer Mode app and choose **Extend** now and then, or apps installed this way stop opening.
+To update, install the new `.ipk` the same way; everything you've set up is kept.
 
 ## Privacy
 
-- telly talks only to your provider, plus a weekly check with GitHub for a new version.
-  No accounts, analytics, adverts or tracking.
-- Your provider login is kept in the **macOS Keychain**.
-  History, progress, My List and settings are encrypted on disk with a key kept there too.
+- telly talks only to your provider. No accounts, analytics, adverts or tracking.
+- Your provider login, history, progress and My List stay on the TV, in telly's own storage.
 - Plain HTTP is refused unless you allow it for your provider (some providers have no HTTPS).
 
 ## How it works
 
-A web page can't play IPTV: providers don't send the headers browsers need, and most streams are
-plain `http://`. So telly is a [Tauri](https://tauri.app) app. The interface is Svelte and
-TypeScript in the Mac's own web view (WebKit), and a small Rust core runs a
-**local relay** on `127.0.0.1` that fetches everything from the provider on the interface's behalf.
-Playback uses the Mac's native HLS (which also decodes Dolby audio), [hls.js](https://github.com/video-dev/hls.js)
-and [mpegts.js](https://github.com/xqq/mpegts.js). Films the Mac can't open directly (MKV, AVI…)
-are repacked into MP4 as they stream by a small bundled [FFmpeg](https://ffmpeg.org) (LGPL, built
-by `scripts/build-ffmpeg.sh`) and fed to the player through Media Source Extensions. Video is copied
-untouched, and so is audio unless the Mac can't play it, when it becomes AAC. **Open in VLC** remains
-for anything else, when VLC is installed.
+The interface is Svelte and TypeScript, built as one classic script for the TV's web engine
+(Chromium 79 on webOS 6). A packaged webOS app may fetch from any address, so the TV talks to the
+provider directly. Playback uses the TV's own player whenever it says it can play a stream, and
+[hls.js](https://github.com/video-dev/hls.js) or [mpegts.js](https://github.com/xqq/mpegts.js)
+otherwise. The remote moves focus spatially (`src/lib/tv.ts`).
 
 | Path | What's there |
 |---|---|
-| `src/lib/` | Provider parsing (Xtream, M3U, guide), catalogue cache, playback rules, state |
+| `src/lib/` | Provider parsing (Xtream, M3U, guide), catalogue cache, playback rules, state, remote control |
 | `src/screens/`, `src/components/` | The interface |
-| `src-tauri/src/relay.rs` | The local stream relay (HLS playlists are rewritten to come through it too) |
-| `src-tauri/src/secure.rs` | Keychain and encrypted storage |
-| `dev/` | `npm run dev` helpers: a browser stand-in for the relay and a fake provider |
+| `webos/` | The app's `appinfo.json`, icons and splash (drawn by [telly-brand](https://github.com/tellyteam/telly-brand)) |
+| `scripts/webos-pack.mjs` | Packs the build into an `.ipk` |
+| `dev/` | `npm run dev` helpers: a relay for the browser and a fake provider |
 
 ## Building from source
 
-Requires macOS, Xcode's command-line tools, Node 22+ and Rust (stable).
+Requires Node 22+.
 
 ```bash
-scripts/build-ffmpeg.sh  # the small FFmpeg telly bundles for MKV films (once; ~2 minutes)
 npm install
-npm test                 # unit tests (TypeScript)
-(cd src-tauri && cargo test)   # unit tests (Rust)
-npx tauri dev            # run the app
-npx tauri build          # build telly.app and the .dmg
+npm test           # unit tests
+npm run build      # build-webos/io.github.tellyteam.telly_<version>_all.ipk
 ```
 
-`npm run dev` also runs the interface in an ordinary browser at http://localhost:5173, with a
-stand-in relay. To try it without a real provider, use the built-in fake one: server
-`http://localhost:5173/__dev/fake`, any username and password, and allow plain HTTP. A git-ignored
-`provider.local.properties` (`server`, `username`, `password`, or `type=m3u` with `url`) pre-fills the
-setup screen in development only.
+LG's [webOS TV Simulator](https://webostv.developer.lge.com/develop/tools/simulator-introduction)
+runs the build without a TV: `npx ares-launch -s 26 -sp <path to the Simulator> dist-webos`.
+
+`npm run dev` runs the interface in an ordinary browser at http://localhost:5173, with a relay
+standing in for the TV's direct access. To try it without a real provider, use the built-in fake
+one: server `http://localhost:5173/__dev/fake`, any username and password, and allow plain HTTP.
+A git-ignored `provider.local.properties` (`server`, `username`, `password`, or `type=m3u` with
+`url`) pre-fills the setup screen in development only.
 
 ## Releasing
 
-Push a version tag; GitHub Actions tests, builds the Mac app (Apple silicon and Intel) and
-publishes it as a release:
+Push a version tag. GitHub Actions tests, builds the `.ipk` and attaches it to a draft release;
+write the notes, then publish it.
 
 ```bash
-git tag v1.0.1 && git push origin v1.0.1
+git tag v1.0.0 && git push origin v1.0.0
 ```
 
 ## Licence

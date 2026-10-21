@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { isFullscreen, isWebOS, openInVlc, probeFilm, setFullscreen, stopFilm, vlcAvailable, type FilmProbe } from "../lib/backend";
+  import { isFullscreen, isWebOS, setFullscreen } from "../lib/backend";
   import * as P from "../lib/playback";
   import { app, type PlayRequest } from "../lib/state.svelte";
   import { attach, type Attached, type Track } from "../lib/video";
@@ -23,7 +23,6 @@
   let time = $state(0);
   let duration = $state(0);
   let error = $state<string | null>(null);
-  let vlc = $state(false);
   let awake = $state(true);
   let menu = $state<"aspect" | "tracks" | "speed" | null>(null);
   let toast = $state<string | null>(null);
@@ -43,14 +42,8 @@
   let lastSaved = 0;
   let wakeLock: WakeLockSentinel | null = null;
 
-  /**
-   * Films the Mac can't open (MKV…) play repacked by the relay as a stream with no length, so the
-   * player keeps its own timeline: [offsetMs] is where the current stream started in the film.
-   */
-  let remux = $state<{ probe: FilmProbe; offsetMs: number; audio?: number } | null>(null);
-  const nowMs = () => (remux ? remux.offsetMs : 0) + video.currentTime * 1000;
-  const totalMs = () =>
-    remux ? (remux.probe.durationSecs ?? 0) * 1000 : Number.isFinite(video.duration) ? video.duration * 1000 : 0;
+  const nowMs = () => video.currentTime * 1000;
+  const totalMs = () => (Number.isFinite(video.duration) ? video.duration * 1000 : 0);
 
   function loadVolume() {
     try {
@@ -65,8 +58,8 @@
   let loadId = 0;
   let watchdog: ReturnType<typeof setTimeout> | undefined;
   /**
-   * Some formats (MKV files on a Mac, notably) are downloaded but never decoded, and the video
-   * element raises no error. If nothing has started after this long, say so and offer VLC.
+   * Some formats are downloaded but never decoded, and the video element raises no error. If
+   * nothing has started after this long, say so.
    */
   const STALL_MS = 20_000;
   async function load(i: number, startAt?: number) {
@@ -81,28 +74,15 @@
     audio = subs = [];
     const target = request.items[i];
     const resumeAt = live ? 0 : startAt ?? P.resumePosition(app.progressOf(target.url));
-    remux = null;
-    // Films that aren't HLS: look inside first, since the Mac's engine only opens MP4 and MOV.
-    if (!live && P.engineFor(target.url, false) === "native") {
-      const probe = await probeFilm(target.url);
-      if (id !== loadId) return;
-      if (probe && !probe.videoPlayable) {
-        error = `This film's video format (${probe.video?.codec ?? "unknown"}) can't be played on a Mac.`;
-        waiting = false;
-        return;
-      }
-      if (probe?.needsRemux) remux = { probe, offsetMs: resumeAt, audio: undefined };
-    }
     const attached = await attach(video, target.url, {
       live,
-      remux: remux ? { startSecs: remux.offsetMs / 1000, audio: remux.audio, probe: remux.probe } : undefined,
       onError: (msg) => { if (id === loadId) { error = msg; waiting = false; } },
       onTracks: readTracks,
     });
     if (id !== loadId) return attached.destroy();
     engine = attached;
     video.playbackRate = speed;
-    if (resumeAt > 0 && !remux) {
+    if (resumeAt > 0) {
       const seek = () => { video.currentTime = resumeAt / 1000; };
       if (video.readyState >= 1) seek(); else video.addEventListener("loadedmetadata", seek, { once: true });
     }
@@ -133,61 +113,14 @@
 
   function readTracks() {
     if (!engine) return;
-    if (remux) {
-      // Only the chosen audio track is in the repacked stream; the rest come from the probe.
-      const probe = remux.probe;
-      audio = probe.audio.map((a, n) => ({
-        id: n,
-        label: [a.title, a.language && a.language.toUpperCase(), a.codec.toUpperCase(), a.layout].filter(Boolean).join(" · "),
-      }));
-      const fallback = Math.max(0, probe.audio.findIndex((a) => a.default));
-      audioSel = remux.audio ?? fallback;
-    } else {
-      audio = engine.audioTracks();
-      audioSel = engine.audioTrack();
-    }
+    audio = engine.audioTracks();
+    audioSel = engine.audioTrack();
     subs = engine.subtitleTracks();
     subSel = engine.subtitleTrack();
   }
 
-  /** A repacked film seeks (or switches audio) by restarting the conversion from that point. */
-  async function restartRemux(atMs: number, audioIndex = remux?.audio) {
-    if (!remux) return;
-    const id = ++loadId;
-    const wasPaused = video.paused;
-    engine?.destroy();
-    remux = { ...remux, offsetMs: Math.max(0, atMs), audio: audioIndex };
-    time = remux.offsetMs;
-    waiting = true;
-    const attached = await attach(video, item.url, {
-      live: false,
-      remux: { startSecs: remux.offsetMs / 1000, audio: audioIndex, probe: remux.probe },
-      onError: (msg) => { if (id === loadId) { error = msg; waiting = false; } },
-      onTracks: readTracks,
-    });
-    if (id !== loadId) return attached.destroy();
-    engine = attached;
-    video.playbackRate = speed;
-    if (!wasPaused) video.play().catch(() => {});
-  }
-
-  /** Repeated presses (→ → →) settle before the conversion restarts, so it only restarts once. */
-  let seekTimer: ReturnType<typeof setTimeout> | undefined;
-  let pendingSeek: number | null = null;
   function seekTo(ms: number) {
-    const target = Math.min(Math.max(0, ms), Math.max(0, totalMs() - 1000));
-    if (!remux) {
-      video.currentTime = target / 1000;
-      return;
-    }
-    pendingSeek = target;
-    time = target;
-    clearTimeout(seekTimer);
-    seekTimer = setTimeout(() => {
-      const at = pendingSeek;
-      pendingSeek = null;
-      if (at !== null) void restartRemux(at);
-    }, 450);
+    video.currentTime = Math.min(Math.max(0, ms), Math.max(0, totalMs() - 1000)) / 1000;
   }
 
   function saveProgress(force = false) {
@@ -197,13 +130,12 @@
     const now = Date.now();
     if (!force && now - lastSaved < 5000) return;
     lastSaved = now;
-    app.saveProgress(item.url, pendingSeek ?? nowMs(), d);
+    app.saveProgress(item.url, nowMs(), d);
   }
 
   // ---- Events from the video ----
 
   function ontimeupdate() {
-    if (pendingSeek !== null) return;
     time = nowMs();
     duration = totalMs();
     saveProgress();
@@ -243,7 +175,7 @@
 
   function seekBy(ms: number) {
     if (live || !duration) return;
-    seekTo((pendingSeek ?? nowMs()) + ms);
+    seekTo(nowMs() + ms);
     flash(ms > 0 ? `+${ms / 1000}s` : `−${-ms / 1000}s`);
   }
 
@@ -287,15 +219,6 @@
     const r = (n: number) => Math.round(Math.min(2, Math.max(0.5, n)) * 100) / 100;
     aspect = { kind: "custom", w: r(aspect.w + dw), h: r(aspect.h + dh) };
     app.saveAspect(live ? `live:${item.id}` : request.aspectKey, aspect);
-  }
-
-  async function playInVlc() {
-    try {
-      await openInVlc(item.url, live ? item.name : `${request.heading} – ${item.name}`);
-      void close();
-    } catch (e) {
-      error = (e as Error).message;
-    }
   }
 
   // ---- Scrubbing ----
@@ -407,7 +330,6 @@
   $effect(() => { if (video) video.playbackRate = speed; });
 
   onMount(() => {
-    vlcAvailable().then((v) => (vlc = v && app.settings.offerVlc));
     const ro = new ResizeObserver(measure);
     ro.observe(stage);
     void load(index, request.startAt);
@@ -421,12 +343,10 @@
     saveProgress(true);
     loadId++;
     engine?.destroy();
-    if (remux) stopFilm();
     wakeLock?.release().catch(() => {});
     clearTimeout(idle);
     clearTimeout(toastTimer);
     clearTimeout(watchdog);
-    clearTimeout(seekTimer);
   });
 
   const title = $derived(live ? item.name : P.isFilm({ heading: request.heading, live, index, items: request.items, at: 0 }) ? item.name : request.heading);
@@ -455,7 +375,7 @@
       <span>{live ? "The channel may be off air, or your provider may limit how many streams play at once." : "Some providers' files use formats this computer's video engine can't decode."}</span>
       <div class="btns">
         <button class="btn primary" onclick={() => load(index)}>Try again</button>
-        {#if vlc}<button class="btn" onclick={playInVlc}>Open in VLC</button>{/if}
+
         {#if live && request.items.length > 1}<button class="btn" onclick={() => go((index + 1) % request.items.length)}>Next channel</button>{/if}
         <button class="btn" onclick={close}>Close</button>
       </div>
@@ -463,7 +383,7 @@
   {/if}
 
   <div class="ui">
-    <div class="ov-top drag" data-tauri-drag-region>
+    <div class="ov-top">
       <button class="back" aria-label="Back" onclick={close}>‹</button>
       <div><div class="t">{title}</div><div class="s">{subtitle}</div></div>
     </div>
@@ -491,7 +411,7 @@
       </div>
     {:else if menu === "tracks"}
       <div class="menu"><h4>Audio</h4>
-        {#each audio as t (t.id)}<button class="opt" class:sel={t.id === audioSel} onclick={() => { if (remux) { if (t.id !== audioSel) void restartRemux(nowMs(), t.id); audioSel = t.id; } else { engine?.setAudioTrack(t.id); audioSel = t.id; } }}>{t.label}</button>
+        {#each audio as t (t.id)}<button class="opt" class:sel={t.id === audioSel} onclick={() => { engine?.setAudioTrack(t.id); audioSel = t.id; }}>{t.label}</button>
         {:else}<div class="hint" style="padding:4px 10px">Only one audio track</div>{/each}
         <h4 style="margin-top:10px">Subtitles</h4>
         <button class="opt" class:sel={subSel < 0} onclick={() => { engine?.setSubtitleTrack(-1); subSel = -1; }}>Off</button>
@@ -538,7 +458,6 @@
         {#if !live}<button class="ic" data-tip="Speed" aria-label="Speed" onclick={() => (menu = menu === "speed" ? null : "speed")}>{speed === 1 ? "1×" : `${speed}×`}</button>{/if}
         <button class="ic" data-tip="Audio & subtitles" aria-label="Audio & subtitles" onclick={() => { readTracks(); menu = menu === "tracks" ? null : "tracks"; }}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 5h16v14H4zm2 9h5v2H6zm7 0h5v2h-5zm-7-3h12v2H6z" /></svg></button>
         <button class="ic" data-tip="Aspect ratio (A)" aria-label="Aspect ratio (A)" onclick={() => (menu = menu === "aspect" ? null : "aspect")}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 12h-2v3h-3v2h5v-5zM7 9h3V7H5v5h2V9zm14-6H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14z" /></svg></button>
-        {#if vlc}<button class="ic" data-tip="Open in VLC" aria-label="Open in VLC" onclick={playInVlc}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3 9H9zM8 13h8l1.5 4h-11zM4 19h16v3H4z" /></svg></button>{/if}
         {#if !isWebOS}<button class="ic" data-tip="Picture in picture (P)" aria-label="Picture in picture (P)" onclick={togglePip}><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 11h-8v6h8v-6zm4 8V5c0-1.1-.9-2-2-2H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 0H3V5h18v14z" /></svg></button>{/if}
         {#if !isWebOS}<button class="ic" data-tip="Full screen (F)" aria-label="Full screen (F)" onclick={toggleFullscreen}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg></button>{/if}
       </div>
@@ -553,7 +472,7 @@
   .ui { opacity: 0; transition: opacity .25s; pointer-events: none; }
   .awake .ui { opacity: 1; pointer-events: auto; }
   .ov-top { position: absolute; left: 0; right: 0; top: 0; padding: 18px 34px 60px 90px; display: flex; gap: 16px; align-items: flex-start; background: linear-gradient(180deg, rgba(7,10,15,.8), transparent); }
-  .back { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; font-size: 20px; border: 0; color: #fff; flex: none; -webkit-app-region: no-drag; }
+  .back { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.1); display: grid; place-items: center; cursor: pointer; font-size: 20px; border: 0; color: #fff; flex: none; }
   .back:hover { background: rgba(255,255,255,.2); }
   .t { font-size: 22px; font-weight: 600; } .s { color: var(--muted); }
   .ov-bottom { position: absolute; left: 0; right: 0; bottom: 0; padding: 70px 34px 22px; background: linear-gradient(0deg, rgba(7,10,15,.92), transparent); }

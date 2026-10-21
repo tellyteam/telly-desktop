@@ -64,7 +64,7 @@ export function account(root: Json): Account {
   };
 }
 
-/** HLS plays everywhere (hls.js, or natively on a Mac), so prefer it when the panel allows it. */
+/** HLS plays everywhere (natively on LG TVs, hls.js elsewhere), so prefer it when the panel allows it. */
 export function preferredFormat(allowed: string[]): string {
   return allowed.length === 0 || allowed.includes("m3u8") ? "m3u8" : "ts";
 }

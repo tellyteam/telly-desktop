@@ -20,7 +20,7 @@
 </script>
 
 <div class="screen">
-  <div class="topbar drag" data-tauri-drag-region></div>
+  <div class="topbar"></div>
   <label class="big-input">⌕ <input bind:this={input} bind:value={query} placeholder="Search films, series and channels" spellcheck="false" autocomplete="off" />
     <kbd>Esc</kbd></label>
   {#if !debounced.trim()}

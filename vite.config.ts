@@ -58,13 +58,8 @@ export default defineConfig(({ mode }) => mode === "webos" ? {
     rollupOptions: { output: { format: "iife", inlineDynamicImports: true } },
   },
 } : {
+  // `npm run dev`: the app in a browser, with a relay for providers' cross-origin answers.
   plugins: [svelte(), devRelay()],
   define: { __APP_VERSION__: JSON.stringify(version) },
-  clearScreen: false,
-  server: { port: 5173, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
-  envPrefix: ["VITE_", "TAURI_ENV_*"],
-  build: {
-    target: ["es2022", "safari15", "chrome105"],
-    chunkSizeWarningLimit: 1200,
-  },
+  server: { port: 5173, strictPort: true },
 });

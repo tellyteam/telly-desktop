@@ -2,7 +2,6 @@ import * as backend from "./backend";
 import type { Channel, Group, Provider, Series } from "./model";
 import * as P from "./playback";
 import * as repo from "./repo";
-import { isNewer, latestRelease, WEEK_MS, type Release } from "./updates";
 import { syncOnce, leave as leaveRelay, SyncError } from "./sync/client";
 import { deriveKeys, newCode, newDeviceId, normaliseCode } from "./sync/crypto";
 import { apply as applySync, emptyLedger, toParcel, type Ledger } from "./sync/local";
@@ -31,12 +30,10 @@ export interface PlayRequest {
 
 export interface Settings {
   autoNext: boolean;
-  offerVlc: boolean;
 }
 
 interface Meta {
   updatedAt?: number;
-  updateCheckedAt?: number;
   /** Sync is hidden until unlocked (seven clicks on the version in Settings). */
   syncUnlocked?: boolean;
 }
@@ -74,7 +71,7 @@ class App {
   progress = $state<Record<string, P.Progress>>({});
   history = $state<P.LastWatched[]>([]);
   aspects = $state<Record<string, string>>({});
-  settings = $state<Settings>({ autoNext: true, offerVlc: true });
+  settings = $state<Settings>({ autoNext: true });
   sync = $state<SyncConfig | null>(null);
   syncStatus = $state<{ busy: boolean; at?: number; error?: string }>({ busy: false });
   private ledger: Ledger = emptyLedger();
@@ -83,7 +80,7 @@ class App {
   private back: Route[] = [];
   player = $state<PlayRequest | null>(null);
 
-  update = $state<{ checking: boolean; latest?: Release; error?: string; current: string; upToDate?: boolean; installing?: number }>({ checking: false, current: "" });
+  version = $state("");
 
   private liveById = new Map<string, Channel>();
   private filmById = new Map<string, Channel>();
@@ -111,7 +108,7 @@ class App {
     this.aspects = asp ?? {};
     this.settings = { ...this.settings, ...set };
     this.meta = meta ?? {};
-    this.update.current = version;
+    this.version = version;
     this.ledger = { ...emptyLedger(), ...ledger };
     this.sync = parseSync(savedSync);
     window.addEventListener("focus", () => {
@@ -126,8 +123,6 @@ class App {
     }
     await this.useProvider(provider);
     this.ready = true;
-    // TVs are updated by reinstalling from the computer, not from GitHub.
-    if (!backend.isWebOS && Date.now() - (this.meta.updateCheckedAt ?? 0) > WEEK_MS) void this.checkForUpdate(false);
   }
 
   /** Shows the saved lists straight away, then refreshes them in the background. */
@@ -367,7 +362,7 @@ class App {
 
   // ---- Sync ----
 
-  /** Sync is a hidden feature for now: Settings shows it once unlocked, or while this Mac is linked. */
+  /** Sync is a hidden feature for now: Settings shows it once unlocked, or while this TV is linked. */
   get syncShown() {
     return !!this.meta.syncUnlocked || !!this.sync;
   }
@@ -482,57 +477,6 @@ class App {
 
   saveSettings() {
     backend.storeWrite("settings", this.settings, 0);
-  }
-
-  // ---- Updates ----
-
-  /**
-   * Downloads the new version, checks its signature against the key built into telly, replaces
-   * the app and restarts. Outside the app (development) it opens the release page instead.
-   */
-  async installUpdate() {
-    const latest = this.update.latest;
-    if (!latest) return;
-    if (!backend.inApp) return backend.openExternal(latest.page);
-    this.update.error = undefined;
-    this.update.installing = 0;
-    try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-      if (!update) {
-        this.update.installing = undefined;
-        return backend.openExternal(latest.page);
-      }
-      let total = 0, done = 0;
-      await update.downloadAndInstall((e) => {
-        if (e.event === "Started") total = e.data.contentLength ?? 0;
-        else if (e.event === "Progress") { done += e.data.chunkLength; this.update.installing = total ? done / total : 0; }
-      });
-      backend.flushWrites();
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (e) {
-      console.warn("Update failed", e);
-      this.update.installing = undefined;
-      this.update.error = "The update didn't install. Use Download to get it from GitHub instead.";
-    }
-  }
-
-  async checkForUpdate(manual: boolean) {
-    this.update.checking = true;
-    this.update.error = undefined;
-    try {
-      const r = await latestRelease();
-      this.update.latest = r && isNewer(r.version, this.update.current) ? r : undefined;
-      this.update.upToDate = manual && !this.update.latest;
-      this.meta.updateCheckedAt = Date.now();
-      backend.storeWrite("meta", this.meta);
-    } catch (e) {
-      if (manual) this.update.error = "Couldn't check GitHub for updates. Try again later.";
-      console.warn("Update check failed", e);
-    } finally {
-      this.update.checking = false;
-    }
   }
 }
 

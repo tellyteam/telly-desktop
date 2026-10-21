@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { inApp, isWebOS } from "../lib/backend";
+  import { isWebOS } from "../lib/backend";
   import type { Provider } from "../lib/model";
   import { app } from "../lib/state.svelte";
   import Wordmark from "../components/Wordmark.svelte";
@@ -18,7 +18,7 @@
   let error = $state<string | null>(null);
 
   // Development only: a git-ignored provider.local.properties pre-fills the form under `npm run dev`.
-  if (import.meta.env.DEV && !inApp && !existing) {
+  if (import.meta.env.DEV && !existing) {
     fetch("/__dev/provider").then((r) => r.json()).then((p: Record<string, string>) => {
       if (p.type === "m3u") { kind = "m3u"; url = p.url ?? ""; }
       else if (p.server) { kind = "xtream"; server = p.server; username = p.username ?? ""; password = p.password ?? ""; }
@@ -53,7 +53,7 @@
   }
 </script>
 
-<div class="setup drag" data-tauri-drag-region>
+<div class="setup">
   <form class="card-form" onsubmit={connect}>
     <div class="wordmark big"><Wordmark height={44} /></div>
     <p class="lead">{editing ? "Your provider" : "Add your IPTV provider to start watching. telly doesn't come with any channels."}</p>
@@ -86,7 +86,7 @@
 
 <style>
   .setup { position: absolute; inset: 0; display: grid; place-items: center; overflow-y: auto; padding: 40px 20px; }
-  .card-form { -webkit-app-region: no-drag; width: min(480px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 30px;
+  .card-form { width: min(480px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 30px;
     background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.06); border-radius: 18px; box-shadow: 0 30px 80px rgba(0,0,0,.35); }
   .big { font-size: 46px; padding: 0; }
   .lead { margin: 0; color: var(--muted); }

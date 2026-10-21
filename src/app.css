@@ -21,9 +21,6 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 
 .window { position: fixed; inset: 0; display: flex; user-select: none; -webkit-user-select: none;
   background: radial-gradient(110% 80% at 85% -10%, var(--bg-high) 0%, var(--bg) 55%, var(--bg-low) 100%); }
-.drag { -webkit-app-region: drag; app-region: drag; }
-
-/* Window dragging: Tauri uses the data-tauri-drag-region attribute; the CSS is for other hosts. */
 
 /* Rail */
 .rail { width: var(--rail); flex: none; padding: 46px 12px 14px; display: flex; flex-direction: column; gap: 2px;
@@ -53,7 +50,6 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 .screen::-webkit-scrollbar { width: 8px; } .screen::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 .topbar { position: sticky; top: 0; z-index: 6; height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 var(--pad);
   background: linear-gradient(180deg, rgba(18,22,29,.94), rgba(18,22,29,0)); }
-.topbar > * { -webkit-app-region: no-drag; app-region: no-drag; }
 .search-box { margin-left: auto; width: min(340px, 42%); height: 34px; border-radius: 10px; background: rgba(255,255,255,.06); border: 1px solid transparent;
   display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--faint); cursor: text; transition: background .12s; }
 .search-box:hover { background: rgba(255,255,255,.09); }
@@ -262,7 +258,7 @@ html.tv :focus-visible, html.tv .card:focus, html.tv button:focus, html.tv [tabi
   outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 10px; }
 html.tv .card:focus { transform: none; box-shadow: 0 0 0 3px var(--accent), 0 10px 30px rgba(79,195,247,.25); outline: none; }
 html.tv .card:focus .play, html.tv .card:focus .heart { opacity: 1; }
-/* No window controls or drag areas on a TV. */
+/* Room for the topbar on a TV, and no keyboard shortcuts shown. */
 html.tv .topbar { padding-left: var(--pad); }
 html.tv .search-box kbd { display: none; }
 html.tv .card:focus { box-shadow: 0 0 0 4px var(--accent), 0 0 0 7px rgba(79,195,247,.25), 0 14px 34px rgba(79,195,247,.3); }

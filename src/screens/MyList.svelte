@@ -11,7 +11,7 @@
 
 <div class="screen">
   <TopBar />
-  <div class="page-head" data-tauri-drag-region><h2>My List</h2><span class="sub">Hover a title and click ♥ to add or remove it</span></div>
+  <div class="page-head"><h2>My List</h2><span class="sub">Hover a title and click ♥ to add or remove it</span></div>
   <div class="chips">
     <button class="chip" class:sel={tab === "all"} onclick={() => (tab = "all")}>All</button>
     {#if app.provider?.kind === "xtream"}

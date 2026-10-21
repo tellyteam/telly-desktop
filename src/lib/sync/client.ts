@@ -15,7 +15,7 @@ export interface RelayResponse {
   text: string;
 }
 
-/** How requests are sent: the desktop app goes through its Rust core, LG TVs use fetch. */
+/** How requests are sent (fetch everywhere; tests use their own). */
 export type Transport = (r: RelayRequest) => Promise<RelayResponse>;
 
 export const fetchTransport: Transport = async (r) => {

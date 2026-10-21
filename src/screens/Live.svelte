@@ -147,8 +147,8 @@
 <svelte:window {onkeydown} bind:innerWidth={width} />
 
 <div class="live">
-  <div class="col cats" data-tauri-drag-region>
-    <h2 data-tauri-drag-region>Live TV</h2>
+  <div class="col cats">
+    <h2>Live TV</h2>
     <button class="cat" class:sel={category === FAVOURITES} onclick={() => (category = FAVOURITES)}><span>{FAVOURITES}</span><span>{favourites.length}</span></button>
     <button class="cat" class:sel={category === ALL} onclick={() => (category = ALL)}><span>{ALL}</span><span>{total.toLocaleString()}</span></button>
     {#each app.live ?? [] as g (g.name)}

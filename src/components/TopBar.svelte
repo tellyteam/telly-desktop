@@ -5,7 +5,7 @@
   let { placeholder = "Search films, series and channels", search = true, children }: { placeholder?: string; search?: boolean; children?: Snippet } = $props();
 </script>
 
-<div class="topbar drag" data-tauri-drag-region>
+<div class="topbar">
   {@render children?.()}
   {#if search}
     <button class="search-box" onclick={() => app.go({ name: "search" })}><span class="icon">⌕</span> <span class="label">{placeholder}</span> <kbd>⌘K</kbd></button>

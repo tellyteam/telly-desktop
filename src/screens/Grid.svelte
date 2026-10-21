@@ -28,7 +28,7 @@
     <button class="btn small" onclick={() => app.goBack() || app.go({ name: kind })}>‹ {kind === "films" ? "Films" : "Series"}</button>
     <label class="search-box"><span>⌕</span><input bind:value={filter} placeholder="Filter {group}" spellcheck="false" /></label>
   </TopBar>
-  <div class="page-head" data-tauri-drag-region><h2>{group}</h2><span class="sub">{items.length.toLocaleString()} {kind}</span></div>
+  <div class="page-head"><h2>{group}</h2><span class="sub">{items.length.toLocaleString()} {kind}</span></div>
   <div class="chips">
     <button class="chip" class:sel={sort === "provider"} onclick={() => (sort = "provider")}>Provider order</button>
     <button class="chip" class:sel={sort === "az"} onclick={() => (sort = "az")}>A–Z</button>

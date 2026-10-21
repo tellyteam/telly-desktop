@@ -1,31 +1,24 @@
 {
-  "name": "telly-desktop",
+  "name": "telly-lg",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build --mode webos && node scripts/webos-pack.mjs",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run",
-    "tauri": "tauri",
-    "build:webos": "vite build --mode webos && node scripts/webos-pack.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
     "@noble/hashes": "^2.4.0",
-    "@tauri-apps/api": "^2.12.3",
-    "@tauri-apps/plugin-opener": "^2.7.1",
-    "@tauri-apps/plugin-process": "^2.4.0",
-    "@tauri-apps/plugin-updater": "^2.14.0",
     "hls.js": "^1.7.3",
     "mpegts.js": "^1.8.2",
     "qrcode-generator": "^2.0.4"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "@tauri-apps/cli": "^2.12.2",
     "@tsconfig/svelte": "^5.0.8",
     "@types/node": "^24.19.2",
     "@webos-tools/cli": "^3.2.6",

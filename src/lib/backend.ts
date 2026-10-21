@@ -1,25 +1,20 @@
-import { invoke } from "@tauri-apps/api/core";
-import { fetchTransport, type RelayResponse, type Transport } from "./sync/client";
+import { fetchTransport, type Transport } from "./sync/client";
 
 /**
- * Everything native, behind one small surface. In the Mac app it's the Rust core; on an LG TV
- * (webOS) the TV itself fetches and plays everything directly; under `npm run dev` in a plain
- * browser it's the Vite dev server's relay plus localStorage, so the UI can be worked on without
- * building the app.
+ * Everything outside the page, behind one small surface. On an LG TV (webOS) the TV itself
+ * fetches and plays everything directly; under `npm run dev` in a browser it's the Vite dev
+ * server's relay (browsers block providers' cross-origin answers) plus localStorage, so the UI
+ * can be worked on without a TV.
  */
 
-/** Built for LG TVs (`npm run build:webos`). */
+/** Built for LG TVs (`npm run build`). */
 export const isWebOS = import.meta.env.VITE_TARGET === "webos";
-
-export const inApp = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-/** Safari's engine (the app's web view), as opposed to Chromium (a browser running `npm run dev`). */
-export const isWebKit = typeof navigator !== "undefined" && /AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|Edg\//.test(navigator.userAgent);
 
 let relayBase = "";
 let cleartext = false;
 
 export async function initBackend(): Promise<void> {
-  relayBase = inApp ? await invoke<string>("relay_base") : isWebOS ? "" : `${location.origin}/__relay/dev`;
+  relayBase = isWebOS ? "" : `${location.origin}/__relay/dev`;
 }
 
 /** Follows the active provider's "allow plain HTTP" setting. */
@@ -34,14 +29,11 @@ function b64url(s: string): string {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-/**
- * The relay address for a provider URL. `hls` asks the relay to rewrite playlists (for playback);
- * `probe` and `remux` are for films the Mac can't open directly (see [probeFilm]).
- */
-export function relayUrl(target: string, opts: { hls?: boolean; probe?: boolean; remux?: boolean } = {}): string {
+/** The relay address for a provider URL. `hls` asks the relay to rewrite playlists (for playback). */
+export function relayUrl(target: string, opts: { hls?: boolean } = {}): string {
   // The TV needs no relay: packaged webOS apps may fetch and play from any address.
   if (isWebOS) return target;
-  const flags = (cleartext ? "c" : "") + (opts.hls ? "h" : "") + (opts.probe ? "p" : "") + (opts.remux ? "m" : "") || "-";
+  const flags = (cleartext ? "c" : "") + (opts.hls ? "h" : "") || "-";
   let name = "x";
   try {
     name = new URL(target).pathname.split("/").pop()?.replace(/[^A-Za-z0-9._-]/g, "").slice(0, 60) || "x";
@@ -92,26 +84,23 @@ export async function getJson(url: string, signal?: AbortSignal): Promise<unknow
   }
 }
 
-// ---- Private storage: the login in the Keychain, the rest encrypted on disk ----
+// ---- Storage: the TV's own, private to the app ----
 
 export async function secretGet(name: string): Promise<string | null> {
-  if (inApp) return (await invoke<string | null>("secret_get", { name })) ?? null;
   return localStorage.getItem(`telly.secret.${name}`);
 }
 
 export async function secretSet(name: string, value: string): Promise<void> {
-  if (inApp) return invoke("secret_set", { name, value });
   localStorage.setItem(`telly.secret.${name}`, value);
 }
 
 export async function secretDelete(name: string): Promise<void> {
-  if (inApp) return invoke("secret_delete", { name });
   localStorage.removeItem(`telly.secret.${name}`);
 }
 
 export async function storeRead<T>(name: string): Promise<T | null> {
   try {
-    const text = inApp ? await invoke<string | null>("store_read", { name }) : localStorage.getItem(`telly.store.${name}`);
+    const text = localStorage.getItem(`telly.store.${name}`);
     return text ? (JSON.parse(text) as T) : null;
   } catch (e) {
     console.warn(`Couldn't read ${name}`, e);
@@ -122,15 +111,13 @@ export async function storeRead<T>(name: string): Promise<T | null> {
 const pendingWrites = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingValues = new Map<string, () => void>();
 
-/** Writes are coalesced (progress saves often), and flushed when the window closes. */
+/** Writes are coalesced (progress saves often), and flushed when the app closes. */
 export function storeWrite(name: string, value: unknown, delayMs = 400): void {
   clearTimeout(pendingWrites.get(name));
   const write = () => {
     pendingWrites.delete(name);
     pendingValues.delete(name);
-    const text = JSON.stringify(value);
-    if (inApp) invoke("store_write", { name, text }).catch((e) => console.warn(`Couldn't save ${name}`, e));
-    else localStorage.setItem(`telly.store.${name}`, text);
+    localStorage.setItem(`telly.store.${name}`, JSON.stringify(value));
   };
   if (delayMs <= 0) return write();
   pendingValues.set(name, write);
@@ -138,111 +125,35 @@ export function storeWrite(name: string, value: unknown, delayMs = 400): void {
 }
 
 export async function storeDelete(name: string): Promise<void> {
-  if (inApp) return invoke("store_delete", { name });
   localStorage.removeItem(`telly.store.${name}`);
+}
+
+/** Saves anything still waiting, e.g. just before the app closes. */
+export function flushWrites(): void {
+  for (const write of [...pendingValues.values()]) write();
 }
 
 // ---- Sync ----
 
-/** Relay requests go through the Rust core in the app (see sync.rs), and plain fetch in development. */
-export const syncTransport: Transport = async (r) => {
-  if (!inApp) return fetchTransport(r);
-  return invoke<RelayResponse>("sync_request", { method: r.method, url: r.url, auth: r.auth, body: r.body ? Array.from(r.body) : null });
-};
+export const syncTransport: Transport = fetchTransport;
 
-// ---- Desktop bits ----
-
-export async function vlcAvailable(): Promise<boolean> {
-  if (isWebOS) return false;
-  return inApp ? invoke<boolean>("vlc_available") : false;
-}
-
-/** The player closed: stop converting its film, even if nothing has been sent yet. */
-export function stopFilm(): void {
-  if (inApp) invoke("stop_film").catch(() => {});
-}
-
-export async function openInVlc(url: string, title: string): Promise<void> {
-  if (inApp) return invoke("open_in_vlc", { url, title });
-  throw new Error("VLC is only available in the app.");
-}
+// ---- The rest ----
 
 export async function openExternal(url: string): Promise<void> {
-  if (inApp) {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    return openUrl(url);
-  }
   window.open(url, "_blank", "noopener");
 }
 
 export async function setFullscreen(on: boolean): Promise<void> {
-  if (inApp) {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    return getCurrentWindow().setFullscreen(on);
-  }
   if (isWebOS) return; // always full screen
   if (on) await document.documentElement.requestFullscreen?.();
   else if (document.fullscreenElement) await document.exitFullscreen();
 }
 
 export async function isFullscreen(): Promise<boolean> {
-  if (inApp) {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    return getCurrentWindow().isFullscreen();
-  }
   // A TV is always full screen, so there's never a full screen to leave: Back closes the player.
   return !isWebOS && !!document.fullscreenElement;
 }
 
 export async function appVersion(): Promise<string> {
-  if (inApp) {
-    const { getVersion } = await import("@tauri-apps/api/app");
-    return getVersion();
-  }
   return __APP_VERSION__;
-}
-
-/** Saves anything still waiting, e.g. just before the window closes. */
-export function flushWrites(): void {
-  for (const write of [...pendingValues.values()]) write();
-}
-
-// ---- Films the Mac can't open directly (MKV, AVI…) ----
-
-export interface FilmStream {
-  index: number;
-  codec: string;
-  language?: string | null;
-  title?: string | null;
-  layout?: string | null;
-  default: boolean;
-}
-
-export interface FilmProbe {
-  format: string;
-  durationSecs?: number | null;
-  video?: FilmStream | null;
-  audio: FilmStream[];
-  subtitles: FilmStream[];
-  /** Not MP4/MOV, so it has to be repacked to play. */
-  needsRemux: boolean;
-  /** The Mac can decode its video at all. */
-  videoPlayable: boolean;
-}
-
-/** What's inside a film, from the app's bundled FFmpeg; null in a dev browser or if it can't tell. */
-export async function probeFilm(url: string): Promise<FilmProbe | null> {
-  if (!inApp) return null;
-  try {
-    const res = await fetch(relayUrl(url, { probe: true }));
-    return res.ok ? ((await res.json()) as FilmProbe) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** The film repacked into MP4 as it streams, starting [startSecs] in, with an audio track from the probe. */
-export function remuxUrl(url: string, startSecs: number, audio?: number): string {
-  const q = [`t=${Math.max(0, startSecs).toFixed(3)}`, ...(audio !== undefined ? [`a=${audio}`] : [])].join("&");
-  return `${relayUrl(url, { remux: true })}?${q}`;
 }

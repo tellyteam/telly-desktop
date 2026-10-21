@@ -27,7 +27,7 @@
 
 <div class="screen">
   <TopBar placeholder={kind === "films" ? "Search films" : "Search series"} />
-  <div class="page-head" data-tauri-drag-region><h2>{kind === "films" ? "Films" : "Series"}</h2>
+  <div class="page-head"><h2>{kind === "films" ? "Films" : "Series"}</h2>
     {#if groups}<span class="sub">{total.toLocaleString()} {kind} · {groups.length} categories</span>{/if}</div>
   {#if groups?.length}
     <div class="chips">

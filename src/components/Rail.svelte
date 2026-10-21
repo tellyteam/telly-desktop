@@ -23,8 +23,8 @@
   const m3u = $derived(app.provider?.kind === "m3u");
 </script>
 
-<nav class="rail drag" data-tauri-drag-region>
-  <div class="wordmark" data-tauri-drag-region><Wordmark height={26} /></div>
+<nav class="rail">
+  <div class="wordmark"><Wordmark height={26} /></div>
   {#each items.filter(([id]) => !(m3u && (id === "series" || id === "films"))) as [id, label, k]}
     <button class="nav" class:current={section(app.route) === id} onclick={() => app.go({ name: id })} title={label}>
       <svg viewBox="0 0 24 24" fill="currentColor">{@html icons[id]}</svg><span>{label}</span><kbd class="k">{k}</kbd>
@@ -37,6 +37,6 @@
   </button>
   <button class="nav" class:current={app.route.name === "settings"} onclick={() => app.go({ name: "settings" })} title="Settings">
     <svg viewBox="0 0 24 24" fill="currentColor">{@html icons.settings}</svg><span>Settings</span>
-    {#if app.update.latest}<i class="dot" title="Update available"></i>{:else}<kbd class="k">{mod},</kbd>{/if}
+    <kbd class="k">{mod},</kbd>
   </button>
 </nav>

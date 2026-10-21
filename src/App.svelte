@@ -51,7 +51,7 @@
 
 <div class="window" class:narrow={width < 1000}>
   {#if !app.ready}
-    <div class="center drag" data-tauri-drag-region><div class="spinner"></div></div>
+    <div class="center"><div class="spinner"></div></div>
   {:else if app.route.name === "setup" || !app.provider}
     <Setup editing={app.route.name === "setup" && !!app.route.editing} />
   {:else}
@@ -59,7 +59,7 @@
     <main class="main">
       {#key app.route}
         {#if app.loadError && !app.live}
-          <div class="screen"><div class="topbar drag" data-tauri-drag-region></div>
+          <div class="screen"><div class="topbar"></div>
             <div class="empty"><b>Couldn't load your lists</b>{app.loadError}
               <div class="btns" style="margin-top:16px"><button class="btn primary" onclick={() => app.refresh()}>Try again</button>
                 <button class="btn" onclick={() => app.go({ name: "setup", editing: true })}>Check provider details</button></div></div></div>

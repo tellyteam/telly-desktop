@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import * as P from "./playback";
-import { cleanNotes, isNewer, parseRelease } from "./updates";
 
 describe("progress", () => {
   it("key drops credentials from xtream urls", () => {
@@ -70,27 +69,5 @@ describe("engine", () => {
   it("formats clocks", () => {
     expect(P.clock(61_000)).toBe("1:01");
     expect(P.clock(3_723_000)).toBe("1:02:03");
-  });
-});
-
-describe("updates", () => {
-  it("reads a release and compares versions numerically", () => {
-    expect(parseRelease({ tag_name: "v1.2.0", body: "Faster.", html_url: "https://github.com/tellyteam/telly-desktop/releases/tag/v1.2.0" }))
-      .toEqual({ version: "1.2.0", page: "https://github.com/tellyteam/telly-desktop/releases/tag/v1.2.0", notes: "Faster." });
-    expect(parseRelease({ tag_name: "v2", prerelease: true })).toBeUndefined();
-    expect(parseRelease({ message: "Not Found" })).toBeUndefined();
-    expect(parseRelease({ tag_name: "v1", html_url: "https://evil.example" })?.page).toMatch(/^https:\/\/github.com\/tellyteam/);
-    expect(isNewer("1.10.0", "1.9.3")).toBe(true);
-    expect(isNewer("v2.0", "1.99.99")).toBe(true);
-    expect(isNewer("1.0.0", "1.0.0")).toBe(false);
-    expect(isNewer("1.0.0-beta", "1.0.1")).toBe(false);
-  });
-});
-
-describe("release notes", () => {
-  it("never show account names", () => {
-    const generated = "## What's Changed\n* MKV films play by @someone in https://github.com/x/pull/4\n\n## New Contributors\n* @someone made their first contribution in https://github.com/x/pull/1\n\n**Full Changelog**: https://github.com/x/compare/a...b";
-    expect(cleanNotes(generated)).toBe("* MKV films play");
-    expect(cleanNotes("**Full Changelog**: https://x")).toBeUndefined();
   });
 });
