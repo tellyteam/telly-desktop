@@ -3,11 +3,13 @@ import type { ServerResponse } from "node:http";
 /**
  * A pretend Xtream provider for `npm run dev`, so the UI can be exercised without a real login.
  * Server address: http://localhost:5173/__dev/fake (any username and password; allow plain HTTP).
- * Streams redirect to public test videos.
+ * Streams redirect to public test videos. With TELLY_FAKE_MKV set to an MKV's address (served
+ * with byte ranges), every third film is that MKV, for testing playback, seeking and downloads.
  */
 
 const HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8";
 const MP4 = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_5MB.mp4";
+const MKV = process.env.TELLY_FAKE_MKV;
 const words = ["Harbour", "Signal", "Copper", "Valley", "Night", "Train", "Paper", "Moons", "Long", "Field", "Glass", "Winter", "Lines", "Small", "Hours",
   "Kingfisher", "Rain", "North", "Road", "Static", "Blue", "Daybreak", "Hollow", "Hill", "Marlow", "River", "Outpost", "Tide", "Bright", "Water"];
 const pick = (i: number, n: number) => words[(i * 7 + n * 13) % words.length];
@@ -44,7 +46,7 @@ export function fakeProvider(path: string, query: URLSearchParams, res: ServerRe
     return res.writeHead(200, { "Content-Type": "image/svg+xml", "Cache-Control": "max-age=3600" }).end(svg);
   }
   if (/^\/live\//.test(path)) return res.writeHead(302, { Location: HLS }).end();
-  if (/^\/(movie|series)\//.test(path)) return res.writeHead(302, { Location: path.endsWith(".m3u8") ? HLS : MP4 }).end();
+  if (/^\/(movie|series)\//.test(path)) return res.writeHead(302, { Location: path.endsWith(".m3u8") ? HLS : path.endsWith(".mkv") && MKV ? MKV : MP4 }).end();
   if (!path.endsWith("player_api.php")) return res.writeHead(404).end();
 
   const action = query.get("action");
@@ -62,7 +64,7 @@ export function fakeProvider(path: string, query: URLSearchParams, res: ServerRe
     case "get_vod_streams":
       return json(Array.from({ length: 420 }, (_, i) => ({
         stream_id: 5000 + i, name: title(i), stream_icon: i % 9 === 4 ? "" : img("poster", title(i)), category_id: String((i % filmCats.length) + 1),
-        container_extension: "mp4", added: String(now() - i * 3600 * 7),
+        container_extension: MKV && i % 3 === 0 ? "mkv" : "mp4", added: String(now() - i * 3600 * 7),
       })));
     case "get_series":
       return json(Array.from({ length: 140 }, (_, i) => ({
@@ -76,7 +78,7 @@ export function fakeProvider(path: string, query: URLSearchParams, res: ServerRe
       for (let s = 1; s <= 1 + (id % 6); s++) {
         episodes[String(s)] = Array.from({ length: 6 + (id % 4) }, (_, e) => ({
           id: String(id * 1000 + s * 100 + e + 1), episode_num: e + 1, title: `${name} - S0${s}E0${e + 1} - ${pick(e + s, 4)} ${pick(e, 5)}`,
-          container_extension: e % 2 ? "m3u8" : "mp4", season: s,
+          container_extension: e % 2 ? "m3u8" : MKV ? "mkv" : "mp4", season: s,
           info: { movie_image: img("still", `${name} ${s}.${e + 1}`), plot: `Episode ${e + 1}: things at ${pick(e, 6)} ${pick(e, 7)} take a turn.`, duration_secs: 596 },
         }));
       }
