@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { isFullscreen, isWebOS, openInVlc, probeFilm, setFullscreen, vlcAvailable, type FilmProbe } from "../lib/backend";
+  import { isFullscreen, isWebOS, openInVlc, probeFilm, setFullscreen, stopFilm, vlcAvailable, type FilmProbe } from "../lib/backend";
   import * as P from "../lib/playback";
   import { app, type PlayRequest } from "../lib/state.svelte";
   import { attach, type Attached, type Track } from "../lib/video";
@@ -421,6 +421,7 @@
     saveProgress(true);
     loadId++;
     engine?.destroy();
+    if (remux) stopFilm();
     wakeLock?.release().catch(() => {});
     clearTimeout(idle);
     clearTimeout(toastTimer);

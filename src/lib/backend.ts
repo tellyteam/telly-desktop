@@ -157,6 +157,11 @@ export async function vlcAvailable(): Promise<boolean> {
   return inApp ? invoke<boolean>("vlc_available") : false;
 }
 
+/** The player closed: stop converting its film, even if nothing has been sent yet. */
+export function stopFilm(): void {
+  if (inApp) invoke("stop_film").catch(() => {});
+}
+
 export async function openInVlc(url: string, title: string): Promise<void> {
   if (inApp) return invoke("open_in_vlc", { url, title });
   throw new Error("VLC is only available in the app.");

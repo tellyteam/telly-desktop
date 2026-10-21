@@ -148,7 +148,8 @@ kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; background: rgba(255,
 
 /* Detail */
 .detail-hero { position: relative; min-height: 380px; margin-top: -64px; }
-.detail-hero .art { height: 440px; }
+/* Taller than the hero, so it runs behind the season chips: it mustn't take their clicks. */
+.detail-hero .art { height: 440px; pointer-events: none; }
 .detail-hero .copy { position: relative; padding: 96px var(--pad) 14px; width: min(620px, 70%); }
 .cast { color: var(--faint); font-size: 12.5px; margin: -6px 0 16px; max-width: 520px; }
 .eps { display: flex; flex-direction: column; gap: 4px; padding: 6px var(--pad) 40px; }

@@ -135,8 +135,13 @@ fn channels(layout: Option<&str>) -> u32 {
 
 /// FFmpeg's arguments to repack `input` into fragmented MP4 on stdout, starting `start_secs` in,
 /// with the chosen audio track (an index into [Probe::audio]; the default track otherwise).
-pub fn remux_args(probe: &Probe, input: &str, start_secs: f64, audio: Option<usize>) -> Vec<String> {
+/// `spliced`: the input is an MKV spliced near `start_secs` (see mkvseek), whose own start isn't
+/// the film's, so the time is taken as the film's clock rather than from where the input starts.
+pub fn remux_args(probe: &Probe, input: &str, start_secs: f64, audio: Option<usize>, spliced: bool) -> Vec<String> {
     let mut a: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin"].map(String::from).to_vec();
+    if spliced {
+        a.extend(["-seek_timestamp".into(), "1".into()]);
+    }
     if start_secs > 0.0 {
         a.extend(["-ss".into(), format!("{start_secs:.3}")]);
     }
@@ -256,12 +261,17 @@ impl Drop for Remux {
 /// Only one film converts at a time: starting another (a seek, a new film) stops the last.
 static CURRENT: Mutex<Option<u32>> = Mutex::new(None);
 
+/// Stops the film being converted, if any. Killed outright: an FFmpeg still finding its place in
+/// a film has written nothing yet, so nothing else would notice the viewer has gone.
+pub fn stop() {
+    if let Some(pid) = CURRENT.lock().ok().and_then(|mut c| c.take()) {
+        let _ = Command::new("/bin/kill").args(["-KILL", &pid.to_string()]).status();
+    }
+}
+
 pub fn start(args: &[String]) -> Result<Remux, String> {
     let ffmpeg = ffmpeg().ok_or("FFmpeg isn't bundled with this build")?;
-    if let Some(pid) = CURRENT.lock().map_err(|_| "remux lock")?.take() {
-        // SIGTERM: FFmpeg stops cleanly, and the old response ends.
-        let _ = Command::new("/bin/kill").arg(pid.to_string()).status();
-    }
+    stop();
     let logging = std::env::var_os("TELLY_RELAY_LOG").is_some();
     let mut args = args.to_vec();
     if logging {
@@ -336,7 +346,7 @@ At least one output file must be specified"#;
     #[test]
     fn copies_what_the_mac_plays_and_converts_the_rest() {
         let p = parse_probe(MKV);
-        let args = remux_args(&p, "http://in", 0.0, None).join(" ");
+        let args = remux_args(&p, "http://in", 0.0, None, false).join(" ");
         assert!(args.contains("-map 0:0 -c:v copy -tag:v hvc1"), "{args}");
         assert!(args.contains("-map 0:1 -c:a copy"), "{args}");
         // Subtitles and cover art stay out of the stream.
@@ -345,9 +355,12 @@ At least one output file must be specified"#;
         assert!(!args.contains("0:3") && !args.contains("0:4") && !args.contains("0:5"), "{args}");
         assert!(!args.contains("-ss"));
 
-        let dts = remux_args(&p, "http://in", 754.5, Some(1)).join(" ");
-        assert!(dts.contains("-ss 754.500 -i http://in"), "{dts}");
+        let dts = remux_args(&p, "http://in", 754.5, Some(1), false).join(" ");
+        assert!(dts.contains("-nostdin -ss 754.500 -i http://in"), "{dts}");
         assert!(dts.contains("-map 0:2 -c:a aac -ac 6 -b:a 384k"), "{dts}");
+
+        let spliced = remux_args(&p, "http://in", 754.5, None, true).join(" ");
+        assert!(spliced.contains("-seek_timestamp 1 -ss 754.500 -i http://in"), "{spliced}");
     }
 
     #[test]

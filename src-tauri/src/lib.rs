@@ -1,3 +1,4 @@
+mod mkvseek;
 mod relay;
 mod remux;
 mod secure;
@@ -11,6 +12,12 @@ struct RelayBase(String);
 #[tauri::command]
 fn relay_base(relay: State<RelayBase>) -> String {
     relay.0.clone()
+}
+
+/// The player closed: stop converting its film.
+#[tauri::command]
+fn stop_film() {
+    remux::stop();
 }
 
 #[tauri::command]
@@ -88,6 +95,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             relay_base,
+            stop_film,
             secret_get,
             secret_set,
             secret_delete,

@@ -73,7 +73,7 @@ export function fakeProvider(path: string, query: URLSearchParams, res: ServerRe
       const id = Number(query.get("series_id"));
       const name = title(id - 800 + 50);
       const episodes: Record<string, unknown[]> = {};
-      for (let s = 1; s <= 1 + (id % 3); s++) {
+      for (let s = 1; s <= 1 + (id % 6); s++) {
         episodes[String(s)] = Array.from({ length: 6 + (id % 4) }, (_, e) => ({
           id: String(id * 1000 + s * 100 + e + 1), episode_num: e + 1, title: `${name} - S0${s}E0${e + 1} - ${pick(e + s, 4)} ${pick(e, 5)}`,
           container_extension: e % 2 ? "m3u8" : "mp4", season: s,

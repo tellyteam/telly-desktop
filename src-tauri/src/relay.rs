@@ -9,7 +9,8 @@
 //! URLs look like `http://127.0.0.1:{port}/{token}/{flags}/{base64url(target)}/{name}`:
 //! - `token` is random per launch, so other software on the machine can't use the relay.
 //! - `flags`: `c` allows plain HTTP (the provider setting), `h` rewrites HLS playlists, `f` marks
-//!   FFmpeg reading a film (see [FILM_READ]). `-` is none.
+//!   FFmpeg reading a film (see [FILM_READ]), `s` a spliced MKV (see mkvseek; `?l=` is where the
+//!   film resumes after its header). `-` is none.
 //! - `name` is the target's file name, only there to make URLs readable; it's ignored.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -20,7 +21,7 @@ use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use url::Url;
 
-use crate::remux;
+use crate::{mkvseek, remux};
 
 /// HLS playlists are small; anything bigger is not a playlist.
 const MAX_PLAYLIST_BYTES: u64 = 8 * 1024 * 1024;
@@ -212,7 +213,7 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
     }
     let flags = rest.split('/').next().unwrap_or("-");
     if flags.contains('p') || flags.contains('m') {
-        return film(request, base, flags, &target, &path);
+        return film(request, base, flags, &target, &path, clients);
     }
 
     let client = match (flags.contains('f'), target.allow_cleartext) {
@@ -222,31 +223,16 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
         (true, true) => &clients.film_lenient,
     };
     let range = request.headers().iter().find(|h| h.field.equiv("Range")).map(|h| h.value.as_str().to_string());
+    if flags.contains('s') {
+        return spliced(request, &target, client, &path, range.as_deref(), flags.contains('f'));
+    }
     let trace = Trace::begin(range.as_deref());
     // FFmpeg reading a film: a newer read (a skip, another film) replaces this one.
-    let film_read = flags.contains('f').then(|| FILM_READ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1);
-    let send = |range: Option<&str>| {
-        let attempt = || {
-            let mut upstream = client.get(target.url.clone());
-            if let Some(r) = range {
-                upstream = upstream.header("Range", r);
-            }
-            upstream.send()
-        };
-        // A kept-alive connection the provider has since closed fails at once: try again on a new one.
-        attempt().or_else(|e| if e.is_redirect() || e.is_connect() || e.is_timeout() { Err(e) } else { attempt() })
-    };
+    let film_read = flags.contains('f').then(new_film_read);
+    let send = |range: Option<&str>| get(client, &target.url, range);
     let response = match send(range.as_deref()) {
         Ok(r) => r,
-        // Never echo the URL: Xtream URLs carry the login.
-        Err(e) => {
-            if std::env::var_os("TELLY_RELAY_LOG").is_some() {
-                eprintln!("relay! #{} failed: {:?}", trace.id, std::error::Error::source(&e).map(|s| s.to_string()));
-            }
-            let host = target.url.host_str().unwrap_or("the provider").to_string();
-            let reason = if e.is_redirect() { "redirected to plain HTTP, which is turned off" } else if e.is_connect() { "couldn't connect" } else { "didn't answer" };
-            return error(request, 502, &format!("{host} {reason}"));
-        }
+        Err(e) => return failed(request, &target.url, &trace, &e),
     };
 
     let status = response.status().as_u16();
@@ -297,6 +283,102 @@ fn handle(request: Request, prefix: &str, base: &str, clients: &Clients) {
     }
     let length = response.content_length().map(|l| l as usize);
     let _ = request.respond(Response::new(StatusCode(status), headers, Traced { inner: response, trace, film_read }, length, None));
+}
+
+/// A GET to the provider, optionally for a byte range.
+fn get(client: &reqwest::blocking::Client, url: &Url, range: Option<&str>) -> reqwest::Result<reqwest::blocking::Response> {
+    let attempt = || {
+        let mut upstream = client.get(url.clone());
+        if let Some(r) = range {
+            upstream = upstream.header("Range", r);
+        }
+        upstream.send()
+    };
+    // A kept-alive connection the provider has since closed fails at once: try again on a new one.
+    attempt().or_else(|e| if e.is_redirect() || e.is_connect() || e.is_timeout() { Err(e) } else { attempt() })
+}
+
+/// Answers a failed provider request. Never with the URL: Xtream URLs carry the login.
+fn failed(request: Request, url: &Url, trace: &Trace, e: &reqwest::Error) {
+    if trace.logging {
+        eprintln!("relay! #{} failed: {:?}", trace.id, std::error::Error::source(e).map(|s| s.to_string()));
+    }
+    let host = url.host_str().unwrap_or("the provider");
+    let reason = if e.is_redirect() { "redirected to plain HTTP, which is turned off" } else if e.is_connect() { "couldn't connect" } else { "didn't answer" };
+    error(request, 502, &format!("{host} {reason}"));
+}
+
+/// Part of a film, for mkvseek: `len` bytes from `at`, and the film's size.
+fn fetch_part(client: &reqwest::blocking::Client, url: &Url, at: u64, len: u64) -> Result<(Vec<u8>, u64), String> {
+    let response = get(client, url, Some(&format!("bytes={at}-{}", at + len.max(1) - 1))).map_err(|_| "The provider didn't answer")?;
+    if response.status().as_u16() != 206 {
+        return Err("The provider doesn't send parts of films".into());
+    }
+    let size = response
+        .headers()
+        .get("content-range")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.rsplit('/').next()?.parse::<u64>().ok())
+        .ok_or("The provider didn't say the film's size")?;
+    let mut bytes = Vec::with_capacity(len as usize);
+    response.take(len).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    Ok((bytes, size))
+}
+
+/// `bytes=a-b`, `bytes=a-` or nothing, as an inclusive range within `total`.
+fn parse_range(range: Option<&str>, total: u64) -> (u64, u64) {
+    let last = total.saturating_sub(1);
+    let Some((a, b)) = range.and_then(|r| r.strip_prefix("bytes=")).and_then(|r| r.split_once('-')) else { return (0, last) };
+    let from = a.trim().parse().unwrap_or(0);
+    (from, b.trim().parse::<u64>().map_or(last, |b| b.min(last)))
+}
+
+/// A spliced MKV (see mkvseek): the film's header from memory, then the film from `?l=` on, as one
+/// file FFmpeg can read with byte ranges.
+fn spliced(request: Request, target: &Target, client: &reqwest::blocking::Client, path: &str, range: Option<&str>, film: bool) {
+    let resume = path.split_once("?l=").and_then(|(_, l)| l.parse::<u64>().ok());
+    let mkv = mkvseek::header(target.url.as_str(), &|at, len| fetch_part(client, &target.url, at, len));
+    let (Some(resume), Ok(mkv)) = (resume, mkv) else {
+        return error(request, 502, "The film couldn't be read");
+    };
+    let head = mkv.bytes.len() as u64;
+    let total = head + mkv.size.saturating_sub(resume);
+    let (from, to) = parse_range(range, total);
+    if from > to {
+        return error(request, 416, "Past the end of the film");
+    }
+    let part = if from < head { mkv.bytes[from as usize..(to + 1).min(head) as usize].to_vec() } else { Vec::new() };
+    let rest = (to >= head).then(|| format!("bytes={}-{}", resume + from.max(head) - head, resume + to - head));
+    let trace = Trace::begin(rest.as_deref());
+    let film_read = film.then(new_film_read);
+    let upstream: Box<dyn Read + Send> = match rest {
+        Some(r) => match get(client, &target.url, Some(&r)) {
+            Ok(response) if response.status().as_u16() == 206 => Box::new(Traced { inner: response, trace, film_read }),
+            Ok(_) => return error(request, 502, "The provider doesn't send parts of films"),
+            Err(e) => return failed(request, &target.url, &trace, &e),
+        },
+        None => Box::new(std::io::empty()),
+    };
+    let mut headers = cors_headers();
+    headers.extend(header("Content-Type", "video/x-matroska"));
+    headers.extend(header("Accept-Ranges", "bytes"));
+    headers.extend(header("Content-Range", &format!("bytes {from}-{to}/{total}")));
+    let status = if range.is_some() { 206 } else { 200 };
+    let body = Cursor::new(part).chain(upstream);
+    let _ = request.respond(Response::new(StatusCode(status), headers, body, Some((to - from + 1) as usize), None));
+}
+
+/// Where to splice an MKV for FFmpeg to start at `start` secs (see mkvseek).
+fn splice_at(client: &reqwest::blocking::Client, url: &Url, duration: Option<f64>, start: f64) -> Result<u64, String> {
+    let fetch = |at, len| fetch_part(client, url, at, len);
+    let header = mkvseek::header(url.as_str(), &fetch)?;
+    let at = mkvseek::landing(&header, duration, start, &fetch)?;
+    if at > header.bytes.len() as u64 { Ok(at) } else { Err("the time is at the start".into()) }
+}
+
+/// Starts a film read, ending any older one (see [FILM_READ]).
+fn new_film_read() -> usize {
+    FILM_READ.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
 }
 
 /// Troubleshooting (TELLY_RELAY_LOG): when each provider request starts, is answered and ends,
@@ -365,8 +447,11 @@ impl<R: Read> Read for Traced<R> {
 
 /// `p`: what's inside a film, as JSON. `m`: the film repacked into MP4 (`?t=` seconds to start
 /// at, `?a=` audio track). FFmpeg reads the film back through this relay.
-fn film(request: Request, base: &str, flags: &str, target: &Target, path: &str) {
-    let input = wrap(base, if target.allow_cleartext { "cf" } else { "f" }, &target.url);
+fn film(request: Request, base: &str, flags: &str, target: &Target, path: &str, clients: &Clients) {
+    // A film is opening, or restarting at a new time: whatever was converting before is done.
+    remux::stop();
+    let read_flags = if target.allow_cleartext { "cf" } else { "f" };
+    let input = wrap(base, read_flags, &target.url);
     let probe = match remux::probe(target.url.as_str(), &input) {
         Ok(p) => p,
         Err(e) => return error(request, 502, &e),
@@ -387,7 +472,24 @@ fn film(request: Request, base: &str, flags: &str, target: &Target, path: &str) 
     let param = |name: &str| query.split('&').find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='));
     let start = param("t").and_then(|v| v.parse::<f64>().ok()).filter(|t| t.is_finite() && *t > 0.0).unwrap_or(0.0);
     let audio = param("a").and_then(|v| v.parse::<usize>().ok());
-    match remux::start(&remux::remux_args(&probe, &input, start, audio)) {
+    // Skipping into an MKV: start FFmpeg's read near the time, instead of letting it read the film
+    // from the start to get there (see mkvseek). Anything unexpected falls back to that.
+    let client = if target.allow_cleartext { &clients.film_lenient } else { &clients.film_strict };
+    let splice = if start > 0.0 && probe.format.starts_with("matroska") {
+        splice_at(client, &target.url, probe.duration_secs, start)
+            .inspect_err(|e| if std::env::var_os("TELLY_RELAY_LOG").is_some() { eprintln!("film: not spliced: {e}") })
+            .ok()
+    } else {
+        None
+    };
+    if std::env::var_os("TELLY_RELAY_LOG").is_some() {
+        eprintln!("film: start={start:.1}s spliced at {splice:?}");
+    }
+    let input = match splice {
+        Some(at) => format!("{}?l={at}", wrap(base, &format!("{read_flags}s"), &target.url)),
+        None => input,
+    };
+    match remux::start(&remux::remux_args(&probe, &input, start, audio, splice.is_some())) {
         Ok(output) => {
             let mut headers = cors_headers();
             headers.extend(header("Content-Type", "video/mp4"));
@@ -472,5 +574,20 @@ mod seek_check {
         };
         eprintln!("SEEK finished={finished} in {:?}", t.elapsed());
         assert!(finished, "FFmpeg didn't get to the middle of the film within 40 s");
+    }
+
+    /// Manual check: the player's request for a film from ten minutes in, start to first video.
+    /// Needs FFmpeg next to the test binary (target/release/deps/ffmpeg); writes it to OUT.
+    #[test]
+    #[ignore]
+    fn film_from_ten_minutes_in() {
+        let relay = start("telly-test".into()).unwrap();
+        let url = Url::parse(&std::env::var("FILM_URL").unwrap()).unwrap();
+        let t = std::time::Instant::now();
+        let mut response = reqwest::blocking::get(format!("{}?t=600", wrap(&relay.base, "cm", &url))).unwrap();
+        let mut out = vec![0u8; 3_000_000];
+        response.read_exact(&mut out).unwrap();
+        eprintln!("FILM first 3 MB after {:?}", t.elapsed());
+        std::fs::write(std::env::var("OUT").unwrap(), out).unwrap();
     }
 }
