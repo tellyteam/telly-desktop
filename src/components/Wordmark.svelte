@@ -1,5 +1,5 @@
 <script lang="ts">
-  /** The telly wordmark: one drawing (Roboto Black) shared by every app and icon. See SimpleIPTV/brand. */
+  /** The telly wordmark: one drawing (Roboto Black) shared by every app and icon. See telly-brand. */
   let { height = 28 }: { height?: number } = $props();
 </script>
 
