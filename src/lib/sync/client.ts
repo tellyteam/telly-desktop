@@ -1,6 +1,6 @@
 /** Talking to the relay. Only sealed parcels ever leave the device. */
+import { bundleJson, mergeBundles, parseBundle, type Bundle } from "./bundle";
 import { open, seal, type Keys } from "./crypto";
-import { merge, parse, trim, type Parcel } from "./parcel";
 
 export interface RelayRequest {
   method: "GET" | "PUT" | "DELETE";
@@ -45,23 +45,26 @@ function fromBase64(text: string): Uint8Array {
 
 const base = (relay: string) => relay.replace(/\/+$/, "");
 
-/** Every other device's parcel that opens with our key; anything else is ignored. */
-export async function pull(transport: Transport, relay: string, keys: Keys, device: string): Promise<Parcel[]> {
+/**
+ * Every other device's parcel that opens with our key; anything else is ignored. [current] is the
+ * tag a version 1 parcel is read as (null: ignored).
+ */
+export async function pull(transport: Transport, relay: string, keys: Keys, device: string, current: string | null): Promise<Bundle[]> {
   const res = await transport({ method: "GET", url: `${base(relay)}/v1/${keys.mailbox}`, auth: keys.auth });
   check(res);
   const { parcels } = JSON.parse(res.text) as { parcels: { device: string; body: string }[] };
-  const result: Parcel[] = [];
+  const result: Bundle[] = [];
   for (const p of parcels ?? []) {
     if (p.device === device) continue;
     const text = open(keys, p.device, fromBase64(p.body));
-    const parcel = text === null ? null : parse(text);
-    if (parcel) result.push(parcel);
+    const bundle = text === null ? null : parseBundle(text, current, keys, p.device);
+    if (bundle) result.push(bundle);
   }
   return result;
 }
 
-export async function push(transport: Transport, relay: string, keys: Keys, device: string, parcel: Parcel): Promise<void> {
-  const body = seal(keys, device, JSON.stringify(trim(parcel, parcel.at)));
+export async function push(transport: Transport, relay: string, keys: Keys, device: string, bundle: Bundle): Promise<void> {
+  const body = seal(keys, device, bundleJson(bundle, keys, device));
   check(await transport({ method: "PUT", url: `${base(relay)}/v1/${keys.mailbox}/${device}`, auth: keys.auth, body }));
 }
 
@@ -71,9 +74,11 @@ export async function leave(transport: Transport, relay: string, keys: Keys, dev
 }
 
 /** One round: fetch the others, combine with [own], share the result. Returns the combined state. */
-export async function syncOnce(transport: Transport, relay: string, keys: Keys, device: string, own: Parcel, now = Date.now()): Promise<Parcel> {
-  const others = await pull(transport, relay, keys, device);
-  const merged = merge(own, others, now);
+export async function syncOnce(
+  transport: Transport, relay: string, keys: Keys, device: string, own: Bundle, current: string | null, now = Date.now(),
+): Promise<Bundle> {
+  const others = await pull(transport, relay, keys, device, current);
+  const merged = mergeBundles(own, others, now);
   await push(transport, relay, keys, device, merged);
   return merged;
 }

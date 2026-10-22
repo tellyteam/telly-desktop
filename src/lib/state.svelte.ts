@@ -1,15 +1,16 @@
 import * as backend from "./backend";
-import type { Channel, Group, Provider, Series } from "./model";
+import { syncIdentity, type Channel, type Group, type Provider, type Series } from "./model";
 import * as P from "./playback";
 import * as repo from "./repo";
 import { syncOnce, leave as leaveRelay, SyncError } from "./sync/client";
-import { deriveKeys, newCode, newDeviceId, normaliseCode } from "./sync/crypto";
-import { apply as applySync, emptyLedger, toParcel, type Ledger } from "./sync/local";
-import type { HistoryEntry } from "./sync/parcel";
+import type { SharedLogin } from "./sync/bundle";
+import { deriveKeys, hex, newCode, newDeviceId, normaliseCode, providerTag, randomBytes, type Keys } from "./sync/crypto";
+import { apply as applySync, emptyLedger, toParcel, type Ledger, type Local } from "./sync/local";
+import { TOMBSTONE_MS, type HistoryEntry } from "./sync/parcel";
 
 export type Route =
   | { name: "home" | "search" | "live" | "series" | "films" | "mylist" | "settings" }
-  | { name: "setup"; editing?: boolean }
+  | { name: "setup"; editing?: string; adding?: boolean }
   | { name: "grid"; kind: "films" | "series"; group: string }
   | { name: "seriesDetail"; series: Series }
   | { name: "filmDetail"; film: Channel };
@@ -36,7 +37,22 @@ interface Meta {
   updatedAt?: number;
   /** Sync is hidden until unlocked (seven clicks on the version in Settings). */
   syncUnlocked?: boolean;
+  /** The saved provider in use, by id. */
+  activeProvider?: string;
+  /** Share provider logins with linked devices that do too (opt-in). */
+  shareLogins?: boolean;
 }
+
+/** A provider saved on this TV. [changedAt] is when it was added or last changed (ms). */
+export interface SavedProvider {
+  id: string;
+  provider: Provider;
+  changedAt: number;
+}
+
+/** One provider's records, kept under its id. */
+const RECORDS = ["favourites", "progress", "history", "sync-ledger"] as const;
+const recordName = (name: (typeof RECORDS)[number], id: string) => `${name}-${id}`;
 
 /** Kept in the Keychain: the link code is the household's only secret. */
 export interface SyncConfig {
@@ -59,6 +75,8 @@ const normalise = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toL
 class App {
   ready = $state(false);
   provider = $state<Provider | null>(null);
+  providers = $state<SavedProvider[]>([]);
+  activeId = $state<string | null>(null);
   // Catalogues can hold tens of thousands of items: raw state, replaced wholesale, never proxied.
   live = $state.raw<Group<Channel>[] | null>(null);
   films = $state.raw<Group<Channel>[] | null>(null);
@@ -90,39 +108,113 @@ class App {
 
   async start() {
     await backend.initBackend();
-    const [fav, prog, hist, asp, set, meta, savedProvider, version, ledger, savedSync] = await Promise.all([
-      backend.storeRead<string[]>("favourites"),
-      backend.storeRead<Record<string, P.Progress>>("progress"),
-      backend.storeRead<P.LastWatched[]>("history"),
+    const [asp, set, meta, version, savedSync] = await Promise.all([
       backend.storeRead<Record<string, string>>("aspects"),
       backend.storeRead<Settings>("settings"),
       backend.storeRead<Meta>("meta"),
-      backend.secretGet("provider").catch(() => null),
       backend.appVersion(),
-      backend.storeRead<Ledger>("sync-ledger"),
       backend.secretGet("sync").catch(() => null),
     ]);
-    this.favourites = fav ?? [];
-    this.progress = prog ?? {};
-    this.history = hist ?? [];
     this.aspects = asp ?? {};
     this.settings = { ...this.settings, ...set };
     this.meta = meta ?? {};
     this.version = version;
-    this.ledger = { ...emptyLedger(), ...ledger };
     this.sync = parseSync(savedSync);
+    this.removedLogins = (await backend.storeRead<Record<string, number>>("login-ledger")) ?? {};
     window.addEventListener("focus", () => {
       if (!this.player && Date.now() - (this.syncStatus.at ?? 0) > SYNC_GAP_MS) void this.syncNow();
     });
 
-    const provider = parseProvider(savedProvider);
-    if (!provider) {
+    this.providers = await this.loadProviders();
+    const active = this.providers.find((p) => p.id === this.meta.activeProvider) ?? this.providers[0];
+    if (!active) {
       this.route = { name: "setup" };
       this.ready = true;
       return;
     }
-    await this.useProvider(provider);
+    await this.activate(active);
     this.ready = true;
+  }
+
+  // ---- Saved providers ----
+
+  /**
+   * The saved providers. Before there could be several, the one provider and its records were kept
+   * unscoped: they become the first saved provider's. One saved without a time gets now: it's still
+   * here, so for shared logins it's newer than any older removal of it on another device.
+   */
+  private async loadProviders(): Promise<SavedProvider[]> {
+    const text = await backend.secretGet("providers").catch(() => null);
+    if (text) {
+      let list = parseProviders(text);
+      if (list.some((p) => !p.changedAt)) {
+        list = list.map((p) => (p.changedAt ? p : { ...p, changedAt: Date.now() }));
+        await this.saveProviders(list);
+      }
+      return list;
+    }
+    const old = parseProvider(await backend.secretGet("provider").catch(() => null));
+    if (!old) return [];
+    const saved: SavedProvider = { id: newProviderId(), provider: old, changedAt: Date.now() };
+    for (const name of RECORDS) {
+      const value = await backend.storeRead<unknown>(name);
+      if (value !== null) backend.storeWrite(recordName(name, saved.id), value, 0);
+      await backend.storeDelete(name);
+    }
+    await this.saveProviders([saved]);
+    await backend.secretDelete("provider");
+    this.meta.activeProvider = saved.id;
+    backend.storeWrite("meta", this.meta, 0);
+    return [saved];
+  }
+
+  private async saveProviders(list: SavedProvider[]) {
+    this.providers = list;
+    await backend.secretSet("providers", JSON.stringify(list));
+    // Adding, changing or removing a provider is news for devices sharing logins.
+    if (this.meta.shareLogins) this.syncSoon();
+  }
+
+  private async readRecords(id: string): Promise<Local> {
+    const [favourites, progress, history, ledger] = await Promise.all([
+      backend.storeRead<string[]>(recordName("favourites", id)),
+      backend.storeRead<Record<string, P.Progress>>(recordName("progress", id)),
+      backend.storeRead<P.LastWatched[]>(recordName("history", id)),
+      backend.storeRead<Ledger>(recordName("sync-ledger", id)),
+    ]);
+    return { favourites: favourites ?? [], progress: progress ?? {}, history: history ?? [], ledger: { ...emptyLedger(), ...ledger } };
+  }
+
+  private writeRecords(id: string, r: Local) {
+    backend.storeWrite(recordName("favourites", id), r.favourites, 0);
+    backend.storeWrite(recordName("progress", id), r.progress, 0);
+    backend.storeWrite(recordName("history", id), r.history, 0);
+    backend.storeWrite(recordName("sync-ledger", id), r.ledger, 0);
+  }
+
+  /** Makes [saved] the provider in use: its records, then its lists (saved ones straight away). */
+  private async activate(saved: SavedProvider) {
+    backend.flushWrites();
+    const r = await this.readRecords(saved.id);
+    this.favourites = r.favourites;
+    this.progress = r.progress;
+    this.history = r.history;
+    this.ledger = r.ledger;
+    this.activeId = saved.id;
+    this.meta.activeProvider = saved.id;
+    backend.storeWrite("meta", this.meta, 0);
+    this.live = this.films = this.series = null;
+    this.setCatalogues(null, null, null);
+    await this.useProvider(saved.provider);
+  }
+
+  /** Switches to another saved provider. Not while something plays. */
+  async switchProvider(id: string) {
+    const saved = this.providers.find((p) => p.id === id);
+    if (!saved || id === this.activeId || this.player) return;
+    this.back = [];
+    this.route = { name: "home" };
+    await this.activate(saved);
   }
 
   /** Shows the saved lists straight away, then refreshes them in the background. */
@@ -177,34 +269,157 @@ class App {
 
   // ---- Provider ----
 
-  async saveProvider(p: Provider) {
+  /**
+   * Checks [p] with the provider, then saves it: in place of [editing], or as a new provider that
+   * comes into use. Throws with a readable message.
+   */
+  async saveProvider(p: Provider, editing?: string) {
+    if (this.providers.some((s) => s.id !== editing && syncIdentity(s.provider) === syncIdentity(p))) {
+      throw new Error("You've already added this provider.");
+    }
     backend.setAllowCleartext(p.allowCleartext);
-    await repo.verify(p); // throws with a readable message
-    await backend.secretSet("provider", JSON.stringify(p));
-    this.live = this.films = this.series = null;
+    try {
+      await repo.verify(p); // throws with a readable message
+    } catch (e) {
+      if (this.provider) backend.setAllowCleartext(this.provider.allowCleartext);
+      throw e;
+    }
+    const list = [...this.providers];
+    const i = editing ? list.findIndex((s) => s.id === editing) : -1;
+    let saved: SavedProvider;
+    if (i >= 0) {
+      // A new server or login means new lists: the old ones go.
+      if (syncIdentity(list[i].provider) !== syncIdentity(p)) {
+        void repo.clearSavedCataloguesFor(list[i].provider);
+        this.forgetLogin(list[i].provider);
+      }
+      saved = list[i] = { ...list[i], provider: p, changedAt: Date.now() };
+    } else {
+      saved = { id: newProviderId(), provider: p, changedAt: Date.now() };
+      list.push(saved);
+    }
+    await this.saveProviders(list);
     this.back = [];
     this.route = { name: "home" };
-    await this.useProvider(p);
+    if (saved.id === this.activeId) {
+      this.live = this.films = this.series = null;
+      this.setCatalogues(null, null, null);
+      await this.useProvider(p);
+    } else {
+      await this.activate(saved);
+    }
   }
 
-  async signOut() {
-    await backend.secretDelete("provider");
-    // History holds stream URLs, which carry the login.
+  /** Removes a provider from this TV, with its lists and everything watched with it. */
+  async removeProvider(id: string, at = Date.now()) {
+    const gone = this.providers.find((p) => p.id === id);
+    if (!gone || this.player) return;
+    await this.saveProviders(this.providers.filter((p) => p.id !== id));
+    this.forgetLogin(gone.provider, at);
+    // Its history holds stream URLs, which carry the login.
+    for (const name of RECORDS) await backend.storeDelete(recordName(name, id));
+    void repo.clearSavedCataloguesFor(gone.provider);
+    if (id !== this.activeId) return;
+    this.back = [];
+    const next = this.providers[0];
+    if (next) {
+      this.route = { name: "home" };
+      await this.activate(next);
+      return;
+    }
+    this.favourites = [];
+    this.progress = {};
     this.history = [];
-    await backend.storeDelete("history");
-    await repo.clearSavedCatalogues();
+    this.ledger = emptyLedger();
+    this.activeId = null;
+    this.meta.activeProvider = undefined;
+    backend.storeWrite("meta", this.meta, 0);
     this.provider = null;
     this.live = this.films = this.series = null;
-    this.back = [];
     this.route = { name: "setup" };
   }
 
   async setAllowCleartext(allow: boolean) {
-    if (!this.provider) return;
+    const i = this.providers.findIndex((p) => p.id === this.activeId);
+    if (!this.provider || i < 0) return;
     const p = { ...this.provider, allowCleartext: allow };
-    await backend.secretSet("provider", JSON.stringify(p));
+    const list = [...this.providers];
+    list[i] = { ...list[i], provider: p, changedAt: Date.now() };
+    await this.saveProviders(list);
     this.provider = p;
     backend.setAllowCleartext(allow);
+  }
+
+  // ---- Shared logins (opt-in) ----
+
+  /** Removed providers, by sync identity, and when: shared as removals while logins are shared. */
+  private removedLogins: Record<string, number> = {};
+
+  private forgetLogin(p: Provider, at = Date.now()) {
+    const now = Date.now();
+    this.removedLogins = Object.fromEntries(
+      Object.entries({ ...this.removedLogins, [syncIdentity(p)]: at }).filter(([, t]) => now - t < TOMBSTONE_MS),
+    );
+    backend.storeWrite("login-ledger", this.removedLogins, 0);
+  }
+
+  /** Turns sharing provider logins with linked devices on or off, and syncs. */
+  setShareLogins(on: boolean) {
+    this.meta.shareLogins = on;
+    backend.storeWrite("meta", this.meta, 0);
+    void this.syncNow();
+  }
+
+  /** This TV's logins (and removals) to share, by tag. */
+  private ownLogins(keys: Keys): Record<string, SharedLogin> {
+    const out: Record<string, SharedLogin> = {};
+    for (const [identity, at] of Object.entries(this.removedLogins)) out[providerTag(keys, identity)] = { at };
+    for (const saved of this.providers) {
+      const tag = providerTag(keys, syncIdentity(saved.provider));
+      if ((out[tag]?.at ?? -1) <= saved.changedAt) out[tag] = { at: saved.changedAt, provider: saved.provider };
+    }
+    return out;
+  }
+
+  /** Takes in other devices' logins: new providers, newer logins, and removals. Returns whether anything changed. */
+  private async applyLogins(logins: Record<string, SharedLogin>, keys: Keys): Promise<boolean> {
+    let changed = false;
+    for (const [tag, login] of Object.entries(logins)) {
+      const mine = this.providers.find((s) => providerTag(keys, syncIdentity(s.provider)) === tag);
+      if (mine && mine.changedAt >= login.at) continue;
+      const p = login.provider;
+      if (!p) {
+        if (mine) { await this.removeProvider(mine.id, login.at); changed = true; }
+      } else if (mine) {
+        await this.saveProviders(this.providers.map((s) => (s.id === mine.id ? { ...s, provider: p, changedAt: login.at } : s)));
+        if (mine.id === this.activeId) { this.provider = p; backend.setAllowCleartext(p.allowCleartext); }
+        changed = true;
+      } else if ((this.removedLogins[syncIdentity(p)] ?? -1) < login.at) {
+        const saved: SavedProvider = { id: newProviderId(), provider: p, changedAt: login.at };
+        await this.saveProviders([...this.providers, saved]);
+        changed = true;
+        // A TV with no provider yet starts with the first one shared with it.
+        if (!this.activeId) {
+          this.route = { name: "home" };
+          await this.activate(saved);
+        }
+      }
+    }
+    return changed;
+  }
+
+  /**
+   * A TV with no provider yet joins a household and takes the providers shared with it: links with
+   * [code], turns on sharing logins, and signs in with the first one shared.
+   */
+  async joinForLogins(code: string) {
+    this.meta.shareLogins = true;
+    this.meta.syncUnlocked = true;
+    backend.storeWrite("meta", this.meta, 0);
+    await this.startSync(code);
+    if (!this.providers.length) {
+      throw new SyncError("Linked, but no providers were shared yet. On a device that has them, turn on Settings → Sync → Share provider logins, then try again here.");
+    }
   }
 
   async clearSavedData() {
@@ -281,7 +496,7 @@ class App {
     const key = favKey(kind, id);
     const on = !this.favourites.includes(key);
     this.favourites = on ? [key, ...this.favourites] : this.favourites.filter((k) => k !== key);
-    backend.storeWrite("favourites", this.favourites, 0);
+    this.write("favourites", this.favourites, 0);
     this.ledger.list[key] = [Date.now(), on];
     this.saveLedger();
     this.syncSoon();
@@ -306,7 +521,7 @@ class App {
   saveProgress(url: string, pos: number, dur: number) {
     if (!(dur > 0) || !Number.isFinite(dur)) return;
     this.progress[P.progressKey(url)] = [Math.round(Math.min(Math.max(pos, 0), dur)), Math.round(dur), Date.now()];
-    backend.storeWrite("progress", this.progress, 2000);
+    this.write("progress", this.progress, 2000);
   }
 
   /** The newest history entry for a series, to resume it from its page. */
@@ -324,7 +539,7 @@ class App {
     this.history = P.remember(this.history, {
       heading: req.heading, live: req.live, index, items: req.items, seriesId: req.seriesId, art: req.art, at: Date.now(),
     });
-    backend.storeWrite("history", this.history, 500);
+    this.write("history", this.history, 500);
   }
 
   /** Plays a history entry: the next episode if the last one reached its credits. */
@@ -336,7 +551,7 @@ class App {
 
   removeFromHistory(h: P.LastWatched) {
     this.history = this.history.filter((x) => P.slot(x) !== P.slot(h));
-    backend.storeWrite("history", this.history, 0);
+    this.write("history", this.history, 0);
     this.ledger.removed[P.slot(h)] = Date.now();
     this.saveLedger();
     this.syncSoon();
@@ -347,8 +562,8 @@ class App {
     this.progress = {};
     this.history = [];
     this.ledger = { ...this.ledger, removed: {}, cleared: Date.now() };
-    backend.storeWrite("progress", this.progress, 0);
-    backend.storeWrite("history", this.history, 0);
+    this.write("progress", this.progress, 0);
+    this.write("history", this.history, 0);
     this.saveLedger();
     void this.syncNow();
   }
@@ -408,28 +623,64 @@ class App {
     this.syncTimer = setTimeout(() => void this.syncNow(), 3000);
   }
 
-  /** Fetches the other devices' changes, takes in what's newer and shares the result. Never during playback. */
+  /**
+   * Fetches the other devices' changes, takes in what's newer and shares the result. Never during
+   * playback. Each saved provider's records travel in their own section, matched to other devices'
+   * by provider tag. The provider in use takes in everything; the others take in progress, My List
+   * and removals now, and Continue watching when they're next in use (resolving it needs their
+   * lists). With sharing on, logins travel too, and other devices' providers come in.
+   */
   async syncNow() {
     const config = this.sync;
     if (!config || this.syncStatus.busy || this.player) return;
+    const sharing = !!this.meta.shareLogins;
+    // Without a provider there's nothing to sync, except logins shared with this TV.
+    if (!this.providers.length && !sharing) return;
     this.syncStatus = { ...this.syncStatus, busy: true, error: undefined };
     try {
       const now = Date.now();
-      const local = { progress: this.progress, history: this.history, favourites: this.favourites, ledger: this.ledger };
-      const merged = await syncOnce(backend.syncTransport, config.relay, deriveKeys(config.code), config.device, toParcel($state.snapshot(local) as typeof local, now), now);
+      const keys = deriveKeys(config.code);
+      const active = this.activeId;
+      const locals = new Map<string, { id: string; local: Local }>();
+      for (const saved of this.providers) {
+        const local: Local = saved.id === active
+          ? ($state.snapshot({ progress: this.progress, history: this.history, favourites: this.favourites, ledger: this.ledger }) as Local)
+          : await this.readRecords(saved.id);
+        locals.set(providerTag(keys, syncIdentity(saved.provider)), { id: saved.id, local });
+      }
+      // A version 1 parcel doesn't say whose it is, so it's read as this TV's provider only when
+      // there's just the one. With several, it's ignored: taken as the provider in use, an older
+      // device's My List would turn up under every provider switched to.
+      const current = locals.size === 1 ? [...locals.keys()][0] : null;
+      const own = {
+        at: now,
+        sections: Object.fromEntries([...locals].map(([tag, { local }]) => [tag, toParcel(local, now)])),
+        ...(sharing ? { logins: this.ownLogins(keys) } : {}),
+      };
+      const merged = await syncOnce(backend.syncTransport, config.relay, keys, config.device, own, current, now);
       if (this.sync !== config) return;
-      const next = await applySync($state.snapshot(local) as typeof local, merged, (e) => this.resolve(e));
-      // Playback may have started meanwhile; its own saves win.
-      if (this.player) return;
-      this.progress = next.progress;
-      this.history = next.history;
-      this.favourites = next.favourites;
-      this.ledger = next.ledger;
-      backend.storeWrite("progress", this.progress, 0);
-      backend.storeWrite("history", this.history, 0);
-      backend.storeWrite("favourites", this.favourites, 0);
-      this.saveLedger();
+      for (const [tag, { id, local }] of locals) {
+        const section = merged.sections[tag];
+        if (!section) continue;
+        const isActive = id === this.activeId;
+        const next = await applySync(local, section, (e) => (isActive ? this.resolve(e) : Promise.resolve(null)));
+        if (!this.providers.some((p) => p.id === id)) continue;
+        if (!isActive) {
+          // Not in use (or no longer: a switch meanwhile loads its records afresh).
+          if (id !== active) this.writeRecords(id, next);
+          continue;
+        }
+        // Playback may have started meanwhile; its own saves win.
+        if (this.player) continue;
+        this.progress = next.progress;
+        this.history = next.history;
+        this.favourites = next.favourites;
+        this.ledger = next.ledger;
+        this.writeRecords(id, next);
+      }
       this.syncStatus = { busy: false, at: Date.now() };
+      // New or changed providers from other devices: their records come in on the next round.
+      if (sharing && merged.logins && (await this.applyLogins(merged.logins, keys))) this.syncSoon();
     } catch (e) {
       this.syncStatus = { ...this.syncStatus, busy: false, error: e instanceof SyncError ? e.message : "Couldn't reach the sync relay." };
       console.warn("Sync failed", e);
@@ -437,7 +688,12 @@ class App {
   }
 
   private saveLedger() {
-    backend.storeWrite("sync-ledger", this.ledger, 0);
+    this.write("sync-ledger", this.ledger, 0);
+  }
+
+  /** Saves one of the active provider's records. */
+  private write(name: (typeof RECORDS)[number], value: unknown, delayMs?: number) {
+    if (this.activeId) backend.storeWrite(recordName(name, this.activeId), value, delayMs);
   }
 
   /** A shared history entry as one this computer can play, from its own lists and login. */
@@ -489,15 +745,32 @@ function parseSync(text: string | null): SyncConfig | null {
   }
 }
 
-function parseProvider(text: string | null): Provider | null {
-  if (!text) return null;
-  try {
-    const p = JSON.parse(text) as Provider;
-    if (p.kind === "xtream" && p.server && p.username) return p;
-    if (p.kind === "m3u" && p.url) return p;
-  } catch { /* fall through */ }
+function validProvider(p: Provider | null | undefined): Provider | null {
+  if (p?.kind === "xtream" && p.server && p.username) return p;
+  if (p?.kind === "m3u" && p.url) return p;
   return null;
 }
+
+function parseProvider(text: string | null): Provider | null {
+  try {
+    return text ? validProvider(JSON.parse(text) as Provider) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseProviders(text: string): SavedProvider[] {
+  try {
+    const list = JSON.parse(text) as SavedProvider[];
+    return Array.isArray(list)
+      ? list.filter((s) => typeof s?.id === "string" && validProvider(s.provider)).map((s) => ({ ...s, changedAt: Number(s.changedAt) || 0 }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+const newProviderId = () => hex(randomBytes(6));
 
 export const app = new App();
 

@@ -51,6 +51,15 @@ export async function write(scope: string, name: string, text: string): Promise<
   }
 }
 
+/** Deletes one provider's saved catalogues. */
+export async function clear(scope: string): Promise<void> {
+  try {
+    await tx("readwrite", (s) => s.delete(IDBKeyRange.bound(`${scope}/`, `${scope}/\uffff`)));
+  } catch (e) {
+    console.warn("Couldn't clear a provider's catalogues", e);
+  }
+}
+
 export async function clearAll(): Promise<void> {
   await tx("readwrite", (s) => s.clear());
 }

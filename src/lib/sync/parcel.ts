@@ -46,9 +46,10 @@ export const keptAfterClear = (at: number, cleared: number) => !cleared || at > 
 export const slotOf = (h: Pick<HistoryEntry, "kind" | "id" | "series">) =>
   h.kind === "live" ? "live" : h.kind === "film" ? `film:${h.id}` : `series:${h.series}`;
 
-const isTime = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
 
-/** Whatever another device sent, reduced to well-formed entries; null if it isn't a parcel at all. */
+export const isTime = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0;
+
+/** A version 1 parcel, reduced to well-formed entries; null if it isn't one. */
 export function parse(json: string): Parcel | null {
   let raw: any;
   try {
@@ -57,21 +58,26 @@ export function parse(json: string): Parcel | null {
     return null;
   }
   if (!raw || raw.v !== 1) return null;
+  return parseSection(raw, isTime(raw.at) ? raw.at : 0);
+}
+
+/** One provider's section another device sent (version 1 parcels were exactly one), reduced to well-formed entries. */
+export function parseSection(raw: any, at: number): Parcel {
   const progress: Parcel["progress"] = {};
-  for (const [k, v] of Object.entries(raw.progress ?? {})) {
+  for (const [k, v] of Object.entries(raw?.progress ?? {})) {
     if (isSyncableKey(k) && Array.isArray(v) && v.length === 3 && v.every(isTime) && v[1] > 0) progress[k] = [v[0], v[1], v[2]];
   }
   const history: HistoryEntry[] = [];
-  for (const h of Array.isArray(raw.history) ? raw.history : []) {
+  for (const h of Array.isArray(raw?.history) ? raw.history : []) {
     if (!h || !["live", "film", "series"].includes(h.kind) || !isSyncableId(h.id) || !isTime(h.at)) continue;
     if (h.kind === "series" && !isSyncableId(h.series)) continue;
     history.push({ kind: h.kind, id: h.id, ...(h.kind === "series" ? { series: h.series } : {}), at: h.at, ...(h.removed === true ? { removed: true } : {}) });
   }
   const list: Parcel["list"] = {};
-  for (const [k, v] of Object.entries(raw.list ?? {})) {
+  for (const [k, v] of Object.entries(raw?.list ?? {})) {
     if (isSyncableKey(k) && Array.isArray(v) && v.length === 2 && isTime(v[0]) && typeof v[1] === "boolean") list[k] = [v[0], v[1]];
   }
-  return { v: 1, at: isTime(raw.at) ? raw.at : 0, progress, history, list, cleared: isTime(raw.cleared) ? raw.cleared : 0 };
+  return { v: 1, at, progress, history, list, cleared: isTime(raw?.cleared) ? raw.cleared : 0 };
 }
 
 const newestFirst = <T>(entries: [string, T][], at: (t: T) => number, max: number) =>
@@ -116,4 +122,9 @@ export function merge(own: Parcel, others: Parcel[], now: number): Parcel {
     }
   }
   return trim({ v: 1, at: now, progress, history: [...history.values()], list, cleared }, now);
+}
+
+/** A section as it's written inside a version 2 parcel: without `v` and `at`. */
+export function sectionObject(p: Parcel) {
+  return { progress: p.progress, history: p.history, list: p.list, cleared: p.cleared };
 }

@@ -171,3 +171,12 @@ export async function programmes(p: Provider, channel: Channel): Promise<guide.P
 }
 
 export const clearSavedCatalogues = () => cache.clearAll();
+
+/** Forgets one provider's saved catalogues (an M3U playlist holds stream URLs, which can carry the login). */
+export async function clearSavedCataloguesFor(p: Provider): Promise<void> {
+  try {
+    await cache.clear(p.kind === "xtream" ? await cache.scope("xtream", X.serverUrl(p.server).toString(), p.username) : await cache.scope("m3u", p.url.trim()));
+  } catch {
+    /* an unreadable server address has nothing saved */
+  }
+}

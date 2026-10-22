@@ -1,6 +1,8 @@
 import { createCipheriv, hkdfSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { deriveKeys, formatCode, newCode, normaliseCode, open, seal } from "./crypto";
+import { deriveKeys, formatCode, newCode, normaliseCode, open, openLogins, providerTag, seal, sealLogins } from "./crypto";
+import { bundleJson, mergeBundles, parseBundle, parseLogins } from "./bundle";
+import { normaliseServer, syncIdentity, type Provider } from "../model";
 import { merge, parse, trim, TOMBSTONE_MS, type Parcel } from "./parcel";
 import { pull, push, type RelayRequest, type Transport } from "./client";
 
@@ -145,11 +147,12 @@ describe("relay round trip", () => {
       return { status: 200, text: JSON.stringify({ parcels }) };
     };
     const keys = deriveKeys(VECTOR.code);
-    await push(transport, "https://relay.test/", keys, "aaaaaaaaaaaaaaaa", parcel({ at: 1, list: { "film:1": [1, true] } }));
-    await push(transport, "https://relay.test", keys, "bbbbbbbbbbbbbbbb", parcel({ at: 2 }));
+    const tag = "aaaaaaaaaaaaaaaa";
+    await push(transport, "https://relay.test/", keys, "aaaaaaaaaaaaaaaa", { at: 1, sections: { [tag]: parcel({ at: 1, list: { "film:1": [1, true] } }) } });
+    await push(transport, "https://relay.test", keys, "bbbbbbbbbbbbbbbb", { at: 2, sections: {} });
     stored.set("cccccccccccccccc", new Uint8Array([1, 2, 3])); // junk is skipped
-    const others = await pull(transport, "https://relay.test", keys, "bbbbbbbbbbbbbbbb");
-    expect(others).toEqual([parcel({ at: 1, list: { "film:1": [1, true] } })]);
+    const others = await pull(transport, "https://relay.test", keys, "bbbbbbbbbbbbbbbb", null);
+    expect(others).toEqual([{ at: 1, sections: { [tag]: parcel({ at: 1, list: { "film:1": [1, true] } }) } }]);
     expect(requests[0].url).toBe(`https://relay.test/v1/${keys.mailbox}/aaaaaaaaaaaaaaaa`);
     expect(requests[0].auth).toBe(keys.auth);
     // Nothing readable leaves the device.
@@ -168,5 +171,72 @@ describe("link", () => {
     expect(parseSyncLink("telly://sync?code=abcd-efgh-jkmn-pqrs", def)).toEqual({ code: "ABCDEFGHJKMNPQRS", relay: def });
     expect(parseSyncLink("https://evil.example/?code=ABCDEFGHJKMNPQRS", def)).toBeNull();
     expect(parseSyncLink("telly://sync?code=ABCDEFGHJKMNPQRS&relay=http%3A%2F%2Fplain", def)).toBeNull();
+  });
+});
+
+describe("version 2", () => {
+  const keys = deriveKeys("0123456789ABCDEF");
+
+  it("makes the shared provider tags", () => {
+    expect(normaliseServer(" Example.com:8080/ ")).toBe("http://example.com:8080");
+    expect(normaliseServer("https://tv.example:443/")).toBe("https://tv.example");
+    expect(normaliseServer("HTTP://tv.example:80")).toBe("http://tv.example");
+    const xtream: Provider = { kind: "xtream", name: "A", server: " Example.com:8080/ ", username: "me", password: "secret", allowCleartext: true };
+    const m3u: Provider = { kind: "m3u", name: "B", url: " https://example.com/list.m3u ", allowCleartext: false };
+    expect(providerTag(keys, syncIdentity(xtream))).toBe("7a6c86b8dde4ea72");
+    expect(providerTag(keys, syncIdentity(m3u))).toBe("ff2163ea5d23fc01");
+    expect(syncIdentity(xtream)).not.toContain("secret");
+    expect(providerTag(deriveKeys("1123456789ABCDEF"), syncIdentity(xtream))).not.toBe("7a6c86b8dde4ea72");
+  });
+
+  it("keeps each provider apart, and reads version 1 only as the only provider", () => {
+    const a = parcel({ at: 10, progress: { "movie/1.mkv": [5, 10, 10] } });
+    const b = parcel({ at: 10, progress: { "movie/1.mkv": [7, 10, 20] } });
+    const back = parseBundle(bundleJson({ at: 30, sections: { aaaaaaaaaaaaaaaa: a, bbbbbbbbbbbbbbbb: b } }), "cccccccccccccccc")!;
+    expect(back.sections.aaaaaaaaaaaaaaaa.progress["movie/1.mkv"][0]).toBe(5);
+    expect(back.sections.bbbbbbbbbbbbbbbb.progress["movie/1.mkv"][0]).toBe(7);
+    expect(back.sections.cccccccccccccccc).toBeUndefined();
+    expect(Object.keys(parseBundle('{"v":2,"at":1,"providers":{"http://x":{"progress":{}}}}', null)!.sections)).toEqual([]);
+    const v1 = '{"v":1,"at":5,"progress":{"movie/9.mp4":[1,2,5]},"history":[],"list":{},"cleared":0}';
+    expect(Object.keys(parseBundle(v1, "dddddddddddddddd")!.sections)).toEqual(["dddddddddddddddd"]);
+    expect(parseBundle(v1, null)!.sections).toEqual({});
+    expect(parseBundle('{"v":3}', "dddddddddddddddd")).toBeNull();
+  });
+
+  it("merges only the providers this device has", () => {
+    const theirs = parcel({ at: 2, progress: { "movie/1.mkv": [6, 10, 2] } });
+    const m = mergeBundles({ at: 1, sections: { aaaaaaaaaaaaaaaa: parcel({ at: 1, progress: { "movie/1.mkv": [1, 10, 1] } }) } },
+      [{ at: 2, sections: { aaaaaaaaaaaaaaaa: theirs, eeeeeeeeeeeeeeee: theirs } }], 3);
+    expect(Object.keys(m.sections)).toEqual(["aaaaaaaaaaaaaaaa"]);
+    expect(m.sections.aaaaaaaaaaaaaaaa.progress["movie/1.mkv"][0]).toBe(6);
+  });
+
+  it("seals the logins box as the shared vector says", () => {
+    expect(hex(keys.logins)).toBe("8bef4c523a4e523d49d504c587836e5b804b7fc42d498a2bd59c8a2ecb7dd49f");
+    const sealed = sealLogins(keys, "00112233aabbccdd", "{}", fromHex("000102030405060708090a0b"));
+    expect(hex(sealed)).toBe("01000102030405060708090a0bb8e5248c11cad1416ea6d5dfb19164d7d67c");
+    expect(openLogins(keys, "00112233aabbccdd", sealed)).toBe("{}");
+    expect(open(keys, "00112233aabbccdd", sealed)).toBeNull();
+    expect(openLogins(keys, "aabbccddeeff0011", sealed)).toBeNull();
+  });
+
+  it("carries logins sealed, checks their tags, and keeps the newest", () => {
+    const home: Provider = { kind: "xtream", name: "Home", server: " Example.com:8080/ ", username: "me", password: "pw1", allowCleartext: true };
+    const tag = providerTag(keys, syncIdentity(home));
+    const text = bundleJson({ at: 50, sections: {}, logins: { [tag]: { at: 40, provider: home }, "0123456789abcdef": { at: 30 } } }, keys, "00112233aabbccdd");
+    expect(text).not.toContain("pw1");
+    const back = parseBundle(text, tag, keys, "00112233aabbccdd")!;
+    expect(back.logins?.[tag]).toEqual({ at: 40, provider: home });
+    expect(back.logins?.["0123456789abcdef"]).toEqual({ at: 30 });
+    expect(parseBundle(text, tag)!.logins).toBeUndefined();
+    expect(parseLogins('{"aaaaaaaaaaaaaaaa":{"at":1,"kind":"m3u","name":"x","url":"https://example.com/list.m3u","allowCleartext":false}}', keys)).toEqual({});
+    expect(Object.keys(parseLogins('{"ff2163ea5d23fc01":{"at":1,"kind":"m3u","name":"x","url":"https://example.com/list.m3u","allowCleartext":false}}', keys))).toEqual(["ff2163ea5d23fc01"]);
+    const a: Provider = { kind: "m3u", name: "A", url: "https://a.example/1.m3u", allowCleartext: false };
+    const b: Provider = { ...a, name: "A renamed" };
+    const m = mergeBundles({ at: 10, sections: {}, logins: { "1111111111111111": { at: 5, provider: a } } },
+      [{ at: 10, sections: {}, logins: { "1111111111111111": { at: 9, provider: b }, "2222222222222222": { at: 1 } } }], 1 + TOMBSTONE_MS + 1);
+    expect(m.logins?.["1111111111111111"].provider).toEqual(b);
+    expect(m.logins?.["2222222222222222"]).toBeUndefined();
+    expect(mergeBundles({ at: 10, sections: {} }, [{ at: 10, sections: {}, logins: { x: { at: 1 } } }], 20).logins).toBeUndefined();
   });
 });

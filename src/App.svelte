@@ -53,7 +53,7 @@
   {#if !app.ready}
     <div class="center"><div class="spinner"></div></div>
   {:else if app.route.name === "setup" || !app.provider}
-    <Setup editing={app.route.name === "setup" && !!app.route.editing} />
+    <Setup editing={app.route.name === "setup" ? app.route.editing : undefined} adding={app.route.name === "setup" && !!app.route.adding} />
   {:else}
     <Rail />
     <main class="main">
@@ -62,7 +62,7 @@
           <div class="screen"><div class="topbar"></div>
             <div class="empty"><b>Couldn't load your lists</b>{app.loadError}
               <div class="btns" style="margin-top:16px"><button class="btn primary" onclick={() => app.refresh()}>Try again</button>
-                <button class="btn" onclick={() => app.go({ name: "setup", editing: true })}>Check provider details</button></div></div></div>
+                <button class="btn" onclick={() => app.go({ name: "setup", editing: app.activeId ?? undefined })}>Check provider details</button></div></div></div>
         {:else if app.route.name === "home"}<Home />
         {:else if app.route.name === "live"}<Live />
         {:else if app.route.name === "series"}<Catalog kind="series" />

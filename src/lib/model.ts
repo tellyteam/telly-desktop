@@ -3,6 +3,28 @@ export type Provider =
   | { kind: "xtream"; name: string; server: string; username: string; password: string; allowCleartext: boolean }
   | { kind: "m3u"; name: string; url: string; allowCleartext: boolean };
 
+/** ` Example.com:8080/ ` → `http://example.com:8080`, as the sync protocol defines it. */
+export function normaliseServer(server: string): string {
+  let s = server.trim().toLowerCase();
+  if (!s.includes("://")) s = `http://${s}`;
+  s = s.replace(/\/+$/, "");
+  for (const [scheme, port] of [["http://", ":80"], ["https://", ":443"]]) {
+    if (!s.startsWith(scheme)) continue;
+    const rest = s.slice(scheme.length);
+    const host = rest.split("/")[0];
+    if (host.endsWith(port)) s = scheme + host.slice(0, -port.length) + rest.slice(host.length);
+  }
+  return s.replace(/\/+$/, "");
+}
+
+/**
+ * Which provider this is, the same on every device and never including the password: the same
+ * server and username (or playlist) is the same provider, whatever it's called. Sync keys each
+ * provider's records by a tag made from this.
+ */
+export const syncIdentity = (p: Provider) =>
+  p.kind === "xtream" ? `xtream\n${normaliseServer(p.server)}\n${p.username}` : `m3u\n${p.url.trim()}`;
+
 /** Anything the player can play: a live channel, a film or a series episode. */
 export interface Channel {
   id: string;

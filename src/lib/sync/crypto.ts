@@ -1,9 +1,10 @@
 /**
- * The keys and sealing for sync (telly-sync PROTOCOL.md, version 1). Pure JavaScript, so it runs
+ * The keys and sealing for sync (telly-sync PROTOCOL.md). Pure JavaScript, so it runs
  * the same in WebKit, on LG TVs and in tests, without needing a secure context for WebCrypto.
  */
 import { gcm } from "@noble/ciphers/aes.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
+import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 
 const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -11,7 +12,7 @@ const SALT = "telly-sync v1";
 const VERSION = 1;
 
 const utf8 = (s: string) => new TextEncoder().encode(s);
-const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+export const hex = (b: Uint8Array) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 
 export function randomBytes(n: number): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(n));
@@ -48,6 +49,10 @@ export interface Keys {
   mailbox: string;
   key: Uint8Array;
   auth: string;
+  /** Keys provider tags (see [providerTag]). */
+  provider: Uint8Array;
+  /** Seals the opt-in logins box (see [sealLogins]). */
+  logins: Uint8Array;
 }
 
 function base64url(b: Uint8Array): string {
@@ -63,13 +68,30 @@ export function deriveKeys(code: string): Keys {
     mailbox: hex(derive("mailbox").subarray(0, 16)),
     key: derive("key"),
     auth: base64url(derive("auth")),
+    provider: derive("provider"),
+    logins: derive("logins"),
   };
 }
 
-const aad = (keys: Keys, device: string) => utf8(`${SALT}|${keys.mailbox}|${device}`);
+/** A provider's tag: meaningless without the link code; with it, only "same provider or not". */
+export const providerTag = (keys: Keys, identity: string) => hex(hmac(sha256, keys.provider, utf8(identity)).subarray(0, 8));
 
-export function seal(keys: Keys, device: string, plaintext: string, nonce = randomBytes(12)): Uint8Array {
-  const sealed = gcm(keys.key, nonce, aad(keys, device)).encrypt(utf8(plaintext));
+const aad = (keys: Keys, device: string) => utf8(`${SALT}|${keys.mailbox}|${device}`);
+const loginsAad = (keys: Keys, device: string) => utf8(`${SALT}|logins|${keys.mailbox}|${device}`);
+
+export const seal = (keys: Keys, device: string, plaintext: string, nonce = randomBytes(12)) => sealBox(keys.key, aad(keys, device), plaintext, nonce);
+
+/** The plaintext, or null if the parcel isn't ours, was altered, or is from a newer version. */
+export const open = (keys: Keys, device: string, box: Uint8Array) => openBox(keys.key, aad(keys, device), box);
+
+/** The opt-in logins box: sealed again, with its own key, inside the (already sealed) parcel. */
+export const sealLogins = (keys: Keys, device: string, plaintext: string, nonce = randomBytes(12)) =>
+  sealBox(keys.logins, loginsAad(keys, device), plaintext, nonce);
+
+export const openLogins = (keys: Keys, device: string, box: Uint8Array) => openBox(keys.logins, loginsAad(keys, device), box);
+
+function sealBox(key: Uint8Array, aad: Uint8Array, plaintext: string, nonce: Uint8Array): Uint8Array {
+  const sealed = gcm(key, nonce, aad).encrypt(utf8(plaintext));
   const out = new Uint8Array(1 + 12 + sealed.length);
   out[0] = VERSION;
   out.set(nonce, 1);
@@ -77,11 +99,10 @@ export function seal(keys: Keys, device: string, plaintext: string, nonce = rand
   return out;
 }
 
-/** The plaintext, or null if the parcel isn't ours, was altered, or is from a newer version. */
-export function open(keys: Keys, device: string, box: Uint8Array): string | null {
+function openBox(key: Uint8Array, aad: Uint8Array, box: Uint8Array): string | null {
   if (box.length < 1 + 12 + 16 || box[0] !== VERSION) return null;
   try {
-    const plain = gcm(keys.key, box.subarray(1, 13), aad(keys, device)).decrypt(box.subarray(13));
+    const plain = gcm(key, box.subarray(1, 13), aad).decrypt(box.subarray(13));
     return new TextDecoder().decode(plain);
   } catch {
     return null;

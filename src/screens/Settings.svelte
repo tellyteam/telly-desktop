@@ -6,7 +6,8 @@
   import { syncLink } from "../lib/sync/link";
   import QrCode from "../components/QrCode.svelte";
 
-  let confirmSignOut = $state(false);
+  let confirmRemove = $state(false);
+  let confirmShare = $state(false);
   let clearing = $state(false);
   let confirmClearProgress = $state(false);
 
@@ -54,11 +55,17 @@
   <TopBar search={false} />
   <div class="page-head" style="padding-bottom:14px"><h2>Settings</h2></div>
   <div class="settings">
-    <div class="panel"><h4>Provider</h4>
-      <div class="line"><div>{p.name}<small>{p.kind === "xtream" ? "Xtream Codes" : "M3U playlist"} · login kept {isWebOS ? "on this TV" : "in this browser (development)"}</small></div>
-        <div class="btns"><button class="btn small" onclick={() => app.go({ name: "setup", editing: true })}>Edit</button>
-          {#if confirmSignOut}<button class="btn small" onclick={() => app.signOut()}>Sign out and forget it</button><button class="btn small" onclick={() => (confirmSignOut = false)}>Cancel</button>
-          {:else}<button class="btn small" onclick={() => (confirmSignOut = true)}>Sign out</button>{/if}</div></div>
+    <div class="panel"><h4>{app.providers.length > 1 ? "Providers" : "Provider"}</h4>
+      {#each app.providers as saved (saved.id)}
+        {@const inUse = saved.id === app.activeId}
+        <div class="line"><div>{inUse && app.providers.length > 1 ? "✓ " : ""}{saved.provider.name}<small>{saved.provider.kind === "xtream" ? "Xtream Codes" : "M3U playlist"} · login kept {isWebOS ? "on this TV" : "in this browser (development)"}</small></div>
+          <div class="btns">{#if !inUse}<button class="btn small" onclick={() => app.switchProvider(saved.id)}>Use</button>{/if}
+            <button class="btn small" onclick={() => app.go({ name: "setup", editing: saved.id })}>Edit</button></div></div>
+      {/each}
+      <div class="line"><div>{app.providers.length > 1 ? "Each provider keeps its own My List, progress and Continue watching." : ""}</div>
+        <div class="btns"><button class="btn small" onclick={() => app.go({ name: "setup", adding: true })}>Add another provider</button>
+          {#if confirmRemove}<button class="btn small" onclick={() => { confirmRemove = false; if (app.activeId) void app.removeProvider(app.activeId); }}>Remove {p.name}</button><button class="btn small" onclick={() => (confirmRemove = false)}>Cancel</button>
+          {:else}<button class="btn small" onclick={() => (confirmRemove = true)}>Remove {p.name}…</button>{/if}</div></div>
       <div class="line"><div>Allow plain HTTP for this provider<small>Only if it has no HTTPS. Traffic to it won't be encrypted.</small></div>
         <button class="switch" class:on={p.allowCleartext} aria-label="Allow plain HTTP" onclick={() => app.setAllowCleartext(!p.allowCleartext)}></button></div>
     </div>
@@ -82,8 +89,14 @@
         {#if showCode}
           <div class="line sync-link"><QrCode text={syncLink(app.sync.code, app.sync.relay, DEFAULT_RELAY)} /><code class="sync-code">{formatCode(app.sync.code)}</code></div>
         {/if}
+        <div class="line"><div>Share provider logins<small>{confirmShare
+            ? "Your providers' addresses, usernames and passwords go to your other linked devices that have this on, and they get theirs. They're end-to-end encrypted: the relay can't read them, but anyone with your sync code could. Adding, changing or removing a provider then does the same on those devices, including removing what was watched with it."
+            : "Your providers, with their logins, on your other devices that share them too."}</small></div>
+          {#if app.meta.shareLogins}<button class="switch on" aria-label="Share provider logins" onclick={() => app.setShareLogins(false)}></button>
+          {:else if confirmShare}<div class="btns"><button class="btn small" onclick={() => { confirmShare = false; app.setShareLogins(true); }}>Share them</button><button class="btn small" onclick={() => (confirmShare = false)}>Cancel</button></div>
+          {:else}<button class="switch" aria-label="Share provider logins" onclick={() => (confirmShare = true)}></button>{/if}</div>
       {:else}
-        <div class="line"><div>Pick up where you left off on your other devices<small>Shares progress, Continue watching and My List, end-to-end encrypted. Your provider login is never shared; sign in on each device.</small></div>
+        <div class="line"><div>Pick up where you left off on your other devices<small>Shares progress, Continue watching and My List, end-to-end encrypted. Provider logins aren't shared unless you turn that on.</small></div>
           <div class="btns"><button class="btn small primary" disabled={linking || !relay.trim()} onclick={() => link()}>Start syncing</button>
             <button class="btn small" disabled={linking} onclick={() => (joining = !joining)}>I have a code</button></div></div>
         {#if joining}
