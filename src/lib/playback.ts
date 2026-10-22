@@ -1,25 +1,51 @@
-import type { Channel } from "./model";
+import type { Channel, Season, Series } from "./model";
 
 // ---- Progress ----
 
-/**
- * The last minute counts as the credits: the episode is treated as watched, and the "next
- * episode" prompt shows. Streaming credits typically run 60–90 s, broadcast 20–40 s.
- */
-export const END_MARGIN_MS = 60_000;
+// ---- telly-sync's PLAYBACK.md as functions; the tests run its playback-cases.json ----
+
+/** The next-episode prompt shows for the last minute, whatever the length. */
+export const PROMPT_MS = 60_000;
+/** Earlier than this, an item starts from the beginning. */
 const MIN_RESUME_MS = 15_000;
+
+/** Seconds the next-episode prompt shows, or null when it doesn't. */
+export function promptSeconds(durationMs: number, positionMs: number, hasNext: boolean, autoNext: boolean, dismissed: boolean, live: boolean): number | null {
+  if (live || !hasNext || !autoNext || dismissed || !(durationMs > 0)) return null;
+  const left = Math.round(durationMs - positionMs);
+  return left >= 1 && left <= PROMPT_MS ? Math.ceil(left / 1000) : null;
+}
+
+/** Whether the next item starts when this one plays to its end. */
+export const advanceAtEnd = (hasNext: boolean, autoNext: boolean, dismissed: boolean) => hasNext && autoNext && !dismissed;
+
+/** Within its credits: the last minute or the last 5%, whichever is longer. */
+export const watched = (positionMs: number, durationMs: number) => durationMs - positionMs < Math.max(PROMPT_MS, durationMs / 20);
+
+/** Where an item starts: its saved position, unless barely started or watched. */
+export function startAt(positionMs: number | null | undefined, durationMs: number | null | undefined): number {
+  if (positionMs == null || durationMs == null || positionMs < MIN_RESUME_MS || watched(positionMs, durationMs)) return 0;
+  return positionMs;
+}
+
+/** "Pick up" goes to the next item when this one was left watched (and there is one). */
+export const continueAt = (index: number, count: number, isWatched: (i: number) => boolean) =>
+  index + 1 < count && isWatched(index) ? index + 1 : index;
+
+/** A Continue watching entry stays while something in it is left: not a watched film, nor a watched last episode. */
+export const shownInContinue = (index: number, count: number, isWatched: (i: number) => boolean) => !isWatched(continueAt(index, count, isWatched));
+
+/** What plays after [index]: the next item, or offline the next downloaded one; null when nothing can. */
+export function nextPlayable(index: number, count: number, downloaded: (i: number) => boolean, online: boolean): number | null {
+  for (let i = index + 1; i < count; i++) if (online || downloaded(i)) return i;
+  return null;
+}
 
 /** [position, duration, saved at] in ms; older records have no time. */
 export type Progress = [number, number, number?];
 
-/**
- * How close to the end counts as watched: the last minute, or the last 5% when that's longer
- * (long episodes often run two or three minutes of credits). The same rule as on Fire TV.
- */
-export const endMargin = (dur: number) => Math.max(END_MARGIN_MS, dur / 20);
-
 export const fraction = ([pos, dur]: Progress) => Math.min(1, Math.max(0, pos / dur));
-export const finished = ([pos, dur]: Progress) => dur - pos < endMargin(dur);
+export const finished = ([pos, dur]: Progress) => watched(pos, dur);
 
 /**
  * Xtream stream URLs embed the username and password (`/series/user/pass/123.mkv`), so the key
@@ -35,10 +61,7 @@ export function progressKey(url: string): string {
 }
 
 /** Where to start: the saved position, unless barely started or already finished. */
-export function resumePosition(p: Progress | undefined): number {
-  if (!p || p[0] < MIN_RESUME_MS || finished(p)) return 0;
-  return p[0];
-}
+export const resumePosition = (p: Progress | undefined) => startAt(p?.[0], p?.[1]);
 
 // ---- History ("pick up where you left off") ----
 
@@ -56,6 +79,8 @@ export interface LastWatched {
   /** Poster or cover for the Continue watching row. */
   art?: string;
   at: number;
+  /** The provider added episodes after the last one watched; cleared once something is played. */
+  newEpisodes?: boolean;
 }
 
 export const current = (h: LastWatched) => h.items[Math.min(Math.max(h.index, 0), h.items.length - 1)];
@@ -78,9 +103,15 @@ export function remember(history: LastWatched[], entry: LastWatched, max = 30): 
  */
 export function continueIndex(h: LastWatched, progressOf: (url: string) => Progress | undefined): number {
   const i = Math.min(Math.max(h.index, 0), h.items.length - 1);
-  if (h.live || i + 1 >= h.items.length) return i;
-  const p = progressOf(h.items[i].url);
-  return p && finished(p) ? i + 1 : i;
+  if (h.live) return i;
+  return continueAt(i, h.items.length, (j) => { const p = progressOf(h.items[j].url); return !!p && finished(p); });
+}
+
+/** Whether it stays in Continue watching: something in it is left to watch (PLAYBACK.md). */
+export function inContinue(h: LastWatched, progressOf: (url: string) => Progress | undefined): boolean {
+  if (h.live) return true;
+  const i = Math.min(Math.max(h.index, 0), h.items.length - 1);
+  return shownInContinue(i, h.items.length, (j) => { const p = progressOf(h.items[j].url); return !!p && finished(p); });
 }
 
 // ---- Aspect ratio ----
@@ -164,3 +195,29 @@ export function clock(ms: number): string {
   const sec = String(s % 60).padStart(2, "0");
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
+
+// ---- New episodes (PLAYBACK.md, Continue watching; the same rules as on Fire TV and iPad) ----
+
+/** When a finished series was last looked at: the provider's stamp then, and when (ms). */
+export interface EpisodeCheck { added: number; at: number }
+
+/** Where watching continues after [watchedId]: that season's episodes and the index, or null if it's the latest. */
+export function episodeAfter(seasons: Season[], watchedId: string): { episodes: Channel[]; index: number } | null {
+  for (let s = 0; s < seasons.length; s++) {
+    const i = seasons[s].episodes.findIndex((e) => e.id === watchedId);
+    if (i < 0) continue;
+    if (i + 1 < seasons[s].episodes.length) return { episodes: seasons[s].episodes, index: i + 1 };
+    const next = seasons.slice(s + 1).find((x) => x.episodes.length);
+    return next ? { episodes: next.episodes, index: 0 } : null;
+  }
+  return null;
+}
+
+/** Whether a series needs fetching again: after the provider changes it, or daily if it doesn't say. */
+export function episodesDue(series: Series, checked: EpisodeCheck | undefined, now: number): boolean {
+  if (!checked) return true;
+  return series.added ? series.added !== checked.added : now - checked.at >= 86_400_000;
+}
+
+/** Whether what comes next arrived after it was watched (older history has no time, so never). */
+export const episodesNew = (series: Series, watchedAt: number) => watchedAt > 0 && !!series.added && series.added * 1000 > watchedAt;

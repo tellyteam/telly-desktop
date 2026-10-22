@@ -8,7 +8,9 @@
   import { app } from "../lib/state.svelte";
   import { playChannel } from "../lib/actions";
 
-  const pick = $derived(app.history[0]);
+  // Something still to watch: a finished film or series never leads Home (PLAYBACK.md).
+  const continuing = $derived(app.history.filter((h) => P.inContinue(h, app.progressOf)));
+  const pick = $derived(continuing[0]);
   const pickIndex = $derived(pick ? P.continueIndex(pick, app.progressOf) : 0);
   const pickItem = $derived(pick?.items[pickIndex]);
   const pickProgress = $derived(pickItem ? app.progressOf(pickItem.url) : undefined);
@@ -30,6 +32,7 @@
   function badge(h: P.LastWatched) {
     if (h.live) return "Live";
     if (P.isFilm(h)) return "Film";
+    if (h.newEpisodes) return "New episodes";
     const c = P.current(h);
     const s = c.group.replace(/^Season /, "S");
     const e = c.name.match(/^E(\d+)/)?.[1];
@@ -61,9 +64,9 @@
     <div class="page-head" style="padding-top:8px"><h2>Welcome to telly</h2><span class="sub">Pick something from {app.provider?.kind === "m3u" ? "Live TV" : "Live TV, Series or Films"}, and it'll show up here next time.</span></div>
   {/if}
 
-  {#if app.history.length}
+  {#if continuing.length}
     <Row title="Continue watching">
-      {#each app.history.slice(0, 20) as h (P.slot(h))}
+      {#each continuing.slice(0, 20) as h (P.slot(h))}
         {@const item = h.items[P.continueIndex(h, app.progressOf)]}
         {@const p = app.progressOf(item.url)}
         <Card variant="landscape" title={h.live ? item.name : P.isFilm(h) ? item.name : h.heading} image={h.art ?? item.logo}

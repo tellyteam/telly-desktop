@@ -265,6 +265,7 @@ class App {
       backend.storeWrite("meta", this.meta);
     }
     this.refreshing = false;
+    void this.checkForNewEpisodes();
   }
 
   // ---- Provider ----
@@ -568,11 +569,44 @@ class App {
     void this.syncNow();
   }
 
-  /** Leaving the player saves progress, then shares it. */
+  /** Leaving the player saves progress, shares it, and looks for new episodes of anything finished. */
   closePlayer() {
     this.player = null;
     backend.flushWrites();
-    void this.syncNow();
+    void this.syncNow().then(() => this.checkForNewEpisodes());
+  }
+
+  private checkingEpisodes = false;
+
+  /**
+   * Brings back series watched to the end of what they had, once the provider adds more: at the next
+   * episode, marked "New episodes" when they arrived after it was watched. Each series is only
+   * fetched again after the provider has changed it (PLAYBACK.md).
+   */
+  async checkForNewEpisodes() {
+    const p = this.provider, id = this.activeId;
+    if (!p || !id || this.checkingEpisodes || !this.series) return;
+    this.checkingEpisodes = true;
+    try {
+      const checks = (await backend.storeRead<Record<string, P.EpisodeCheck>>(`episode-checks-${id}`)) ?? {};
+      for (const entry of $state.snapshot(this.history) as P.LastWatched[]) {
+        if (entry.live || P.isFilm(entry) || P.inContinue(entry, this.progressOf) || !entry.seriesId) continue;
+        const show = this.seriesItem(entry.seriesId);
+        if (!show || !P.episodesDue(show, checks[show.id], Date.now())) continue;
+        const data = await repo.seriesData(p, show, "network").catch(() => undefined);
+        if (!data || this.provider !== p) continue;
+        checks[show.id] = { added: show.added ?? 0, at: Date.now() };
+        const next = P.episodeAfter(data.seasons, P.current(entry).id);
+        if (!next) continue;
+        // Never moved to the front: Continue watching leads with what was last watched.
+        const back: P.LastWatched = { ...entry, items: next.episodes, index: next.index, newEpisodes: P.episodesNew(show, entry.at) };
+        this.history = this.history.map((h) => (P.slot(h) === P.slot(entry) ? back : h));
+        this.write("history", this.history, 0);
+      }
+      backend.storeWrite(`episode-checks-${id}`, checks, 0);
+    } finally {
+      this.checkingEpisodes = false;
+    }
   }
 
   // ---- Sync ----

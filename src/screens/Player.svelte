@@ -144,12 +144,12 @@
   function onended() {
     if (live) return;
     app.saveProgress(item.url, duration, duration);
-    if (hasNext && app.settings.autoNext) go(index + 1, 0);
-    else close();
+    if (P.advanceAtEnd(hasNext, app.settings.autoNext, nextDismissed)) go(index + 1, 0);
+    else wake(); // stays on the last frame with the controls, as PLAYBACK.md says
   }
 
-  const remaining = $derived(duration ? duration - time : Infinity);
-  const showNext = $derived(hasNext && app.settings.autoNext && !nextDismissed && !error && remaining <= P.END_MARGIN_MS && remaining > 0);
+  const nextSeconds = $derived(error ? null : P.promptSeconds(duration, time, hasNext, app.settings.autoNext, nextDismissed, live));
+  const showNext = $derived(nextSeconds !== null);
 
   // ---- Controls ----
 
@@ -253,8 +253,14 @@
   // ---- Keyboard ----
 
   function onkeydown(e: KeyboardEvent) {
-    wake();
     const k = e.key;
+    // The next-episode prompt (controls hidden): OK plays next now, Back cancels it for this episode.
+    if (showNext && !awake && !adjusting && (k === "Enter" || k === "Escape")) {
+      e.preventDefault();
+      if (k === "Enter") go(index + 1, 0); else nextDismissed = true;
+      return;
+    }
+    wake();
     if (adjusting) {
       const step = e.shiftKey ? 0.05 : 0.01;
       if (k === "ArrowLeft") nudge(-step, 0); else if (k === "ArrowRight") nudge(step, 0);
@@ -388,9 +394,10 @@
       <div><div class="t">{title}</div><div class="s">{subtitle}</div></div>
     </div>
 
-    {#if showNext && nextItem}
+    <!-- PLAYBACK.md's prompt: small, bottom-right, and out of the way of the controls. -->
+    {#if showNext && nextItem && !awake}
       <button class="nextp" onclick={() => go(index + 1, 0)}>
-        <b>▶ Next episode in {Math.max(0, Math.ceil(remaining / 1000))}s</b>{nextItem.name}
+        <b>▶ Next in {nextSeconds}s · OK</b>{nextItem.name}
         <span class="x" role="button" tabindex="-1" aria-label="Dismiss" onclick={(e) => { e.stopPropagation(); nextDismissed = true; }} onkeydown={() => {}}>✕</span>
       </button>
     {/if}
@@ -497,10 +504,11 @@
   .opt { min-height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; color: #d3dae3; cursor: pointer; border: 0; background: none; text-align: left; }
   .opt:hover { background: rgba(255,255,255,.08); }
   .opt.sel::after { content: "✓"; color: var(--accent); font-weight: 900; }
-  .nextp { position: absolute; right: 34px; bottom: 124px; padding: 10px 34px 10px 14px; border-radius: 10px; font-size: 12.5px; background: rgba(16,20,24,.8); border: 1px solid var(--accent); cursor: pointer; color: var(--text); text-align: left; max-width: 340px; }
-  .nextp b { display: block; }
+  .nextp { position: absolute; right: 16px; bottom: 16px; width: 220px; padding: 6px 28px 6px 10px; border-radius: 8px; font-size: 10px; background: rgba(16,20,24,.6); border: 1px solid var(--accent); cursor: pointer; color: #fff; text-align: left; opacity: .9;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nextp b { display: block; font-size: 11px; }
   .nextp:hover { background: rgba(16,20,24,.95); }
-  .nextp .x { position: absolute; top: 8px; right: 10px; color: var(--muted); }
+  .nextp .x { position: absolute; top: 6px; right: 8px; color: var(--muted); }
   .player:not(.awake) .nextp { opacity: .9; pointer-events: auto; }
   .player:not(.awake) .ui:has(.nextp) { opacity: 1; }
   .player:not(.awake) .ui:has(.nextp) > :not(.nextp) { opacity: 0; }
