@@ -122,6 +122,6 @@
         {#if confirmClearProgress}<div class="btns"><button class="btn small" onclick={() => { app.clearProgress(); confirmClearProgress = false; }}>Clear it all</button><button class="btn small" onclick={() => (confirmClearProgress = false)}>Cancel</button></div>
         {:else}<button class="btn small" onclick={() => (confirmClearProgress = true)}>Clear</button>{/if}</div>
     </div>
-    <p class="hint">telly is free software (GPL-3.0). It talks only to your provider{app.syncShown ? ", and to the sync relay if you turn on sync" : ""}. No accounts, analytics or tracking.</p>
+    <p class="hint">telly is free for personal use (PolyForm Noncommercial licence). It talks only to your provider{app.syncShown ? ", and to the sync relay if you turn on sync" : ""}. No accounts, analytics or tracking.</p>
   </div>
 </div>
